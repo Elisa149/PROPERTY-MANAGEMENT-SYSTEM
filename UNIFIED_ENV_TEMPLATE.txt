@@ -1,0 +1,36 @@
+# ===========================================
+# UNIFIED .ENV FILE FOR ENTIRE PROJECT
+# Create this file as ".env" in the root directory (C:\Users\saych\rent\.env)
+# ===========================================
+
+# Firebase Configuration (Backend)
+FIREBASE_PROJECT_ID=fam-rent-sys
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDauAZ6ZoT6cMNc\nmZQeMlnGiy4/cX2iru9RWtS6U9pFIUSvTn7XErjKnphKL/scPrCUFsWmjKX8aYnB\nvTyWaAWM8Z6sh8z2CKm+W5w98vk/MaiEgARnRPgD7RZfkITcoz4qYzkj5B/IBKLS\nxAcCnKslPzpvhBt2hYg5i7z2npvK1AzqAmoTs2GkBKqQVTFSEF1wdOSdSB0rNEmG\nE2WA9mO+9ArpG8on0e9rVoO9SHhJ7M9RN6sI3KU0PgMxmr/pTU1YPAHUcPOhc8OR\nmrTiuucESeNCHS/KA2yEI2S2fpta546OSMCBS+8touIs5R1AfOg5oMUrY1TtJ6r5\nw7X4i4eFAgMBAAECggEAVA3Y3306qYxgZ9vVom0zNywRz+vrnnOgISHJEvparaqF\nXOHLuRfG0Id2ezxJQqeM8Lx3pPP0bjaY7E2vVRYQ3AOXOTLPP9ZAdZl7SAtyYijR\nXGpeRtmofsnEiWFezfQmVd/f+70VwaaWdG1FTGmtFBlieazJaRkUKxlau2Rk9uMk\n+XDFdtQIFEAHARQ3Gr+1/gMluu9QZs6vynju+qkwnnoevVT4cKRIxdpmF0uULpZN\n42CL6oJsBz5S3snRzhbY3EG9EnU54ejedpZik305DMOWIIIZDiXJpINa9niCslKL\nXz6zNUM6kMr2svZ11PNgTFuEUu9J7ckCa6cE1EiJmQKBgQD8fG6TDqW4QFO+5Ird\nAbRumxkRxwgflG7xFIN5bgqWJ2SiKs8GLa9yfnNyMKWmukqQMG+PKqY4YMQ28ktH\n6K5jwJo0UNKE4r4yP1xG7F+QRWRZxdYOoDALm95FRaiurjaclmxBc69dghaEHMGI\nWiPkngbap13x+2xrT0ZtI1CWGwKBgQDdw0k+mUu3VQM9Qmn9UT7LV50fRa577lDV\n1wQBQrZYhanS/Kvi1w9s8g8UtBPACTcRjeG1vva//pG0C3cQKgDjLXLpQsmWSw0j\n4HSIaUwwPj/zRnxVlrfgOSXiAlBFe4DZt9hn1o6Qcz4Q9PKaAh/1e2cBhfTKGg3c\n11cfXo6y3wKBgHegUReV6gi5WbRpPi3mX+HD1IXqwjuMLWBF8uD2tUddVL3NAJeR\nz720keg5ilLLkwZsHH89mtG9b1oFRIvGf9G9cJJ29LeHYswV3xevaLvHVPt/06LM\nXNczO4WgsoJJApEAaDw+noj0WMyxfzSmWLk58k9o2wcKs9zIC7sr70OfAoGBAI1e\n+Ct66EToYhdEZnMBvyk8IkMUVeZVh5y65Ke1Eq+eDiQdxanndcL7ENges8FREy6Fa\nNKB7K6w7qkD/6hgY3tX0XEQNupsgHzFW3pMzpUk/9d6teYfKfE/pvpe0591TnVGu\nHLwdkGbPwKporNu3LQ5+a60R63qHX30Anl62Ffw7AoGBAOuSXvOoSDuh2gI7PQlD\n6CS7eF2q/BXyr2ZjpTrTt7DyTf+XnPOJk2i16YqQMUPdCvvB53O5EWQjsEfhTOc8\nnPzdqXlKw3YqkQcaqvRi6a5IWUsjeD+V83OHvDvfenY/4r4v0SK2bCZMXZwniSNq\n59m1ui11eb6tWThnaoPfGGD/\n-----END PRIVATE KEY-----"
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@fam-rent-sys.iam.gserviceaccount.com
+
+# Backend Server Configuration
+PORT=5001
+NODE_ENV=development
+FRONTEND_URL=http://localhost:3000
+JWT_SECRET=fam-rent-sys-secret-key-2024
+
+# Firebase Web App Configuration (Frontend)
+VITE_FIREBASE_API_KEY=AIzaSyC7IltHmisfPRC55eVFZxX8aF_niT7Jf8A
+VITE_FIREBASE_AUTH_DOMAIN=fam-rent-sys.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=fam-rent-sys
+VITE_FIREBASE_STORAGE_BUCKET=fam-rent-sys.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=143878786305
+VITE_FIREBASE_APP_ID=1:143878786305:web:08d8dc1f49063e3dc45f00
+VITE_FIREBASE_MEASUREMENT_ID=G-YN5JX52XS9
+
+# API Configuration (Frontend)
+VITE_API_BASE_URL=http://localhost:5001/api
+
+# ===========================================
+# READY TO USE! 🚀
+# 1. Copy this entire content
+# 2. Create a file named ".env" in the root directory (same level as package.json)
+# 3. Paste this content into the .env file
+# 4. Restart with: yarn dev
+# 5. Visit: http://localhost:3000
+# ===========================================
