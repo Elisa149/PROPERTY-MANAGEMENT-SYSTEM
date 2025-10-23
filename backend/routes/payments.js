@@ -1,6 +1,13 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const { verifyToken } = require('../middleware/auth');
+const { 
+  verifyTokenWithRBAC, 
+  requirePermission,
+  requireAnyPermission,
+  requireOrganization,
+  filterPropertiesByAccess 
+} = require('../middleware/rbac');
 const Joi = require('joi');
 const { v4: uuidv4 } = require('uuid');
 const router = express.Router();
@@ -19,31 +26,43 @@ const paymentSchema = Joi.object({
 });
 
 // GET /api/payments - Get all payments for user
-router.get('/', verifyToken, async (req, res) => {
+router.get('/', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(['payments:read:organization', 'payments:read:assigned']), async (req, res) => {
   try {
     const userId = req.user.uid;
+    const organizationId = req.user.organizationId;
+    const permissions = req.user.permissions;
     const { propertyId, rentId, startDate, endDate, status } = req.query;
     const db = admin.firestore();
     
-    // Get user's properties first
-    const propertiesSnapshot = await db.collection('properties')
-      .where('userId', '==', userId)
-      .get();
+    // Get user's accessible properties based on RBAC permissions
+    const propertiesSnapshot = await filterPropertiesByAccess(userId, organizationId, permissions);
     
     const propertyIds = [];
     const propertiesMap = {};
-    propertiesSnapshot.forEach(doc => {
-      propertyIds.push(doc.id);
-      propertiesMap[doc.id] = doc.data();
-    });
+    
+    const processSnapshot = (snapshot) => {
+      if (snapshot.forEach) {
+        snapshot.forEach(doc => {
+          propertyIds.push(doc.id);
+          propertiesMap[doc.id] = doc.data();
+        });
+      } else if (snapshot.docs) {
+        snapshot.docs.forEach(doc => {
+          propertyIds.push(doc.id);
+          propertiesMap[doc.id] = doc.data();
+        });
+      }
+    };
+    
+    processSnapshot(propertiesSnapshot);
     
     if (propertyIds.length === 0) {
       return res.json({ payments: [], totalAmount: 0, totalPayments: 0 });
     }
     
-    // Simple query to avoid index requirements initially
+    // Get all payments for organization
     const paymentsSnapshot = await db.collection('payments')
-      .where('propertyId', 'in', propertyIds)
+      .where('organizationId', '==', organizationId)
       .get();
     
     const payments = [];
@@ -51,6 +70,9 @@ router.get('/', verifyToken, async (req, res) => {
     
     for (const doc of paymentsSnapshot.docs) {
       const paymentData = doc.data();
+      
+      // Filter by accessible properties
+      if (!propertyIds.includes(paymentData.propertyId)) continue;
       
       // Apply filters
       if (propertyId && paymentData.propertyId !== propertyId) continue;
@@ -108,24 +130,51 @@ router.get('/', verifyToken, async (req, res) => {
 });
 
 // GET /api/payments/dashboard/summary - Get payment summary for dashboard
-router.get('/dashboard/summary', verifyToken, async (req, res) => {
+router.get('/dashboard/summary', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(['payments:read:organization', 'payments:read:assigned']), async (req, res) => {
   try {
     const userId = req.user.uid;
+    const organizationId = req.user.organizationId;
+    const permissions = req.user.permissions;
     const db = admin.firestore();
     
-    // Get user's properties
-    const propertiesSnapshot = await db.collection('properties')
-      .where('userId', '==', userId)
-      .get();
+    // Get user's accessible properties based on RBAC permissions
+    const propertiesSnapshot = await filterPropertiesByAccess(userId, organizationId, permissions);
     
     const propertyIds = [];
-    propertiesSnapshot.forEach(doc => {
-      propertyIds.push(doc.id);
+    const propertiesMap = {};
+    
+    const processSnapshot = (snapshot) => {
+      if (snapshot.forEach) {
+        snapshot.forEach(doc => {
+          propertyIds.push(doc.id);
+          propertiesMap[doc.id] = doc.data();
+        });
+      } else if (snapshot.docs) {
+        snapshot.docs.forEach(doc => {
+          propertyIds.push(doc.id);
+          propertiesMap[doc.id] = doc.data();
+        });
+      }
+    };
+    
+    processSnapshot(propertiesSnapshot);
+    
+    // Calculate total spaces from properties
+    let totalSpaces = 0;
+    Object.values(propertiesMap).forEach(property => {
+      if (property.type === 'building' && property.buildingDetails?.floors) {
+        property.buildingDetails.floors.forEach(floor => {
+          totalSpaces += floor.spaces?.length || 0;
+        });
+      } else if (property.type === 'land' && property.landDetails?.squatters) {
+        totalSpaces += property.landDetails.squatters.length;
+      }
     });
     
     if (propertyIds.length === 0) {
       return res.json({
         totalProperties: 0,
+        totalSpaces: 0,
         thisMonth: { collected: 0, expected: 0, payments: 0, collectionRate: 0 },
         lastMonth: { collected: 0, expected: 0, payments: 0, collectionRate: 0 },
         recentPayments: []
@@ -137,26 +186,23 @@ router.get('/dashboard/summary', verifyToken, async (req, res) => {
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
     
-    // Get all payments for user's properties (avoid complex indexes)
+    // Get all payments for accessible properties
     const allPayments = await db.collection('payments')
-      .where('propertyId', 'in', propertyIds)
+      .where('organizationId', '==', organizationId)
       .get();
     
-    // Process all payments and calculate summaries
-    let thisMonthCollected = 0;
-    let thisMonthCount = 0;
-    let lastMonthCollected = 0;
-    let lastMonthCount = 0;
-    
+    // Filter payments by accessible properties
     const allPaymentsData = [];
     allPayments.forEach(doc => {
       const payment = doc.data();
-      const paymentDate = payment.paymentDate?.toDate();
-      allPaymentsData.push({
-        ...payment,
-        paymentDate,
-        id: doc.id,
-      });
+      if (propertyIds.includes(payment.propertyId)) {
+        const paymentDate = payment.paymentDate?.toDate();
+        allPaymentsData.push({
+          ...payment,
+          paymentDate,
+          id: doc.id,
+        });
+      }
     });
     
     // Sort all payments by date for recent payments
@@ -167,6 +213,11 @@ router.get('/dashboard/summary', verifyToken, async (req, res) => {
     });
     
     // Calculate month summaries
+    let thisMonthCollected = 0;
+    let thisMonthCount = 0;
+    let lastMonthCollected = 0;
+    let lastMonthCount = 0;
+    
     allPaymentsData.forEach(payment => {
       const paymentDate = payment.paymentDate;
       const amount = payment.amount + (payment.lateFee || 0);
@@ -202,22 +253,29 @@ router.get('/dashboard/summary', verifyToken, async (req, res) => {
       }
     }
     
-    // Get expected rent (active rent records) - simplified query
-    const allRentSnapshot = await db.collection('rent')
-      .where('propertyId', 'in', propertyIds)
-      .get();
-    
+    // Calculate expected monthly rent from properties
     let expectedMonthlyRent = 0;
-    allRentSnapshot.forEach(doc => {
-      const rentData = doc.data();
-      // Only count active rent records
-      if (rentData.status === 'active') {
-        expectedMonthlyRent += rentData.monthlyRent || rentData.monthlyAmount || 0;
+    Object.values(propertiesMap).forEach(property => {
+      if (property.type === 'building' && property.buildingDetails?.floors) {
+        property.buildingDetails.floors.forEach(floor => {
+          floor.spaces?.forEach(space => {
+            if (space.status === 'occupied') {
+              expectedMonthlyRent += space.monthlyRent || 0;
+            }
+          });
+        });
+      } else if (property.type === 'land' && property.landDetails?.squatters) {
+        property.landDetails.squatters.forEach(squatter => {
+          if (squatter.status === 'active') {
+            expectedMonthlyRent += squatter.monthlyPayment || 0;
+          }
+        });
       }
     });
     
     res.json({
       totalProperties: propertyIds.length,
+      totalSpaces,
       thisMonth: {
         collected: Math.round(thisMonthCollected * 100) / 100,
         expected: expectedMonthlyRent,
@@ -239,9 +297,9 @@ router.get('/dashboard/summary', verifyToken, async (req, res) => {
 });
 
 // GET /api/payments/:id - Get specific payment
-router.get('/:id', verifyToken, async (req, res) => {
+router.get('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(['payments:read:organization', 'payments:read:assigned']), async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const organizationId = req.user.organizationId;
     const paymentId = req.params.id;
     const db = admin.firestore();
     
@@ -253,11 +311,13 @@ router.get('/:id', verifyToken, async (req, res) => {
     
     const paymentData = paymentDoc.data();
     
-    // Verify ownership through property
-    const propertyDoc = await db.collection('properties').doc(paymentData.propertyId).get();
-    if (!propertyDoc.exists || propertyDoc.data().userId !== userId) {
+    // Verify payment belongs to user's organization
+    if (paymentData.organizationId !== organizationId) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    
+    // Get property info
+    const propertyDoc = await db.collection('properties').doc(paymentData.propertyId).get();
     
     // Get additional info
     let rentInfo = null;
@@ -272,7 +332,7 @@ router.get('/:id', verifyToken, async (req, res) => {
       payment: {
         id: paymentId,
         ...paymentData,
-        propertyName: propertyDoc.data().name,
+        propertyName: propertyDoc.exists ? propertyDoc.data().name : 'Unknown Property',
         tenantName: rentInfo?.tenantName || 'Unknown Tenant',
         paymentDate: paymentData.paymentDate?.toDate(),
         createdAt: paymentData.createdAt?.toDate(),
@@ -286,7 +346,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 });
 
 // POST /api/payments - Create new payment
-router.post('/', verifyToken, async (req, res) => {
+router.post('/', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(['payments:create:organization', 'payments:create:assigned']), async (req, res) => {
   try {
     const { error, value } = paymentSchema.validate(req.body);
     if (error) {
@@ -294,12 +354,18 @@ router.post('/', verifyToken, async (req, res) => {
     }
     
     const userId = req.user.uid;
+    const organizationId = req.user.organizationId;
     const db = admin.firestore();
     
-    // Verify property ownership
+    // Verify property exists and belongs to the organization
     const propertyDoc = await db.collection('properties').doc(value.propertyId).get();
-    if (!propertyDoc.exists || propertyDoc.data().userId !== userId) {
-      return res.status(403).json({ error: 'Property not found or access denied' });
+    if (!propertyDoc.exists) {
+      return res.status(404).json({ error: 'Property not found' });
+    }
+    
+    const propertyData = propertyDoc.data();
+    if (propertyData.organizationId !== organizationId) {
+      return res.status(403).json({ error: 'Property not in your organization' });
     }
     
     // Verify rent record exists and belongs to the property
@@ -312,7 +378,8 @@ router.post('/', verifyToken, async (req, res) => {
     const paymentData = {
       ...value,
       id: paymentId,
-      userId,
+      organizationId,
+      createdBy: userId,
       paymentDate: admin.firestore.Timestamp.fromDate(new Date(value.paymentDate)),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -332,7 +399,7 @@ router.post('/', verifyToken, async (req, res) => {
 });
 
 // PUT /api/payments/:id - Update payment
-router.put('/:id', verifyToken, async (req, res) => {
+router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(['payments:update:organization', 'payments:update:assigned']), async (req, res) => {
   try {
     const { error, value } = paymentSchema.validate(req.body);
     if (error) {
@@ -340,24 +407,32 @@ router.put('/:id', verifyToken, async (req, res) => {
     }
     
     const userId = req.user.uid;
+    const organizationId = req.user.organizationId;
     const paymentId = req.params.id;
     const db = admin.firestore();
     
-    // Verify payment exists and user owns the property
+    // Verify payment exists and belongs to user's organization
     const paymentDoc = await db.collection('payments').doc(paymentId).get();
     if (!paymentDoc.exists) {
       return res.status(404).json({ error: 'Payment not found' });
     }
     
-    const propertyDoc = await db.collection('properties').doc(value.propertyId).get();
-    if (!propertyDoc.exists || propertyDoc.data().userId !== userId) {
+    const existingPayment = paymentDoc.data();
+    if (existingPayment.organizationId !== organizationId) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    // Verify property belongs to organization
+    const propertyDoc = await db.collection('properties').doc(value.propertyId).get();
+    if (!propertyDoc.exists || propertyDoc.data().organizationId !== organizationId) {
+      return res.status(403).json({ error: 'Property not in your organization' });
     }
     
     const updateData = {
       ...value,
       paymentDate: admin.firestore.Timestamp.fromDate(new Date(value.paymentDate)),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: userId,
     };
     
     await db.collection('payments').doc(paymentId).update(updateData);
@@ -374,9 +449,9 @@ router.put('/:id', verifyToken, async (req, res) => {
 });
 
 // DELETE /api/payments/:id - Delete payment
-router.delete('/:id', verifyToken, async (req, res) => {
+router.delete('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(['payments:delete:organization', 'payments:delete:assigned']), async (req, res) => {
   try {
-    const userId = req.user.uid;
+    const organizationId = req.user.organizationId;
     const paymentId = req.params.id;
     const db = admin.firestore();
     
@@ -387,9 +462,8 @@ router.delete('/:id', verifyToken, async (req, res) => {
     
     const paymentData = paymentDoc.data();
     
-    // Verify ownership
-    const propertyDoc = await db.collection('properties').doc(paymentData.propertyId).get();
-    if (!propertyDoc.exists || propertyDoc.data().userId !== userId) {
+    // Verify payment belongs to user's organization
+    if (paymentData.organizationId !== organizationId) {
       return res.status(403).json({ error: 'Access denied' });
     }
     

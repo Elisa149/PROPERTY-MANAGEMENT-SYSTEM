@@ -59,6 +59,9 @@ const UserManagementPage = () => {
   const [responseMessage, setResponseMessage] = useState('');
   const [availableRoles, setAvailableRoles] = useState([]);
   const [currentTab, setCurrentTab] = useState(0);
+  const [editRoleDialog, setEditRoleDialog] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [newRoleId, setNewRoleId] = useState('');
   const queryClient = useQueryClient();
 
   // Fetch all users
@@ -116,6 +119,23 @@ const UserManagementPage = () => {
     }
   );
 
+  // Update user role mutation
+  const updateRoleMutation = useMutation(
+    ({ userId, roleId }) => usersAPI.updateRole(userId, { roleId }),
+    {
+      onSuccess: () => {
+        toast.success('User role updated successfully');
+        queryClient.invalidateQueries('organizationUsers');
+        setEditRoleDialog(false);
+        setSelectedUser(null);
+        setNewRoleId('');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to update user role');
+      },
+    }
+  );
+
   const requests = requestsData?.requests || [];
   const users = usersData?.data?.users || [];
   
@@ -155,6 +175,24 @@ const UserManagementPage = () => {
       action,
       roleId: action === 'approve' ? selectedRole : undefined,
       message: responseMessage,
+    });
+  };
+
+  const handleEditRole = (user) => {
+    setSelectedUser(user);
+    setNewRoleId(user.roleId || '');
+    setEditRoleDialog(true);
+  };
+
+  const handleUpdateRole = () => {
+    if (!newRoleId) {
+      toast.error('Please select a role');
+      return;
+    }
+
+    updateRoleMutation.mutate({
+      userId: selectedUser.id,
+      roleId: newRoleId,
     });
   };
 
@@ -385,12 +423,16 @@ const UserManagementPage = () => {
                       <TableCell>
                         <Box sx={{ display: 'flex', gap: 0.5 }}>
                           <Tooltip title="Edit Role">
-                            <IconButton size="small" color="primary">
+                            <IconButton 
+                              size="small" 
+                              color="primary"
+                              onClick={() => handleEditRole(user)}
+                            >
                               <Edit />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Deactivate User">
-                            <IconButton size="small" color="error">
+                          <Tooltip title="Deactivate User (Coming Soon)">
+                            <IconButton size="small" color="error" disabled>
                               <Block />
                             </IconButton>
                           </Tooltip>
@@ -526,7 +568,7 @@ const UserManagementPage = () => {
                 >
                   {availableRoles.map((role) => (
                     <MenuItem key={role.id} value={role.id}>
-                      {role.name} - {role.description}
+                      {role.displayName || role.name} - {role.description}
                     </MenuItem>
                   ))}
                 </Select>
@@ -560,6 +602,98 @@ const UserManagementPage = () => {
             disabled={respondMutation.isLoading || !selectedRole}
           >
             {respondMutation.isLoading ? 'Processing...' : 'Approve'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit User Role Dialog */}
+      <Dialog 
+        open={editRoleDialog} 
+        onClose={() => {
+          setEditRoleDialog(false);
+          setSelectedUser(null);
+          setNewRoleId('');
+        }} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle>
+          Edit User Role
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2, mt: 1 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              User Details
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Avatar sx={{ bgcolor: 'primary.main' }}>
+                {selectedUser ? getInitials(selectedUser.displayName) : ''}
+              </Avatar>
+              <Box>
+                <Typography variant="body1" fontWeight={600}>
+                  {selectedUser?.displayName}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {selectedUser?.email}
+                </Typography>
+              </Box>
+            </Box>
+            
+            {selectedUser?.role && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Current Role: <Chip label={selectedUser.role.displayName || selectedUser.role.name} size="small" color="info" />
+                </Typography>
+              </Box>
+            )}
+          </Box>
+
+          <FormControl fullWidth>
+            <InputLabel>Select New Role</InputLabel>
+            <Select
+              value={newRoleId}
+              label="Select New Role"
+              onChange={(e) => setNewRoleId(e.target.value)}
+              renderValue={(selected) => {
+                const role = availableRoles.find(r => r.id === selected);
+                return role ? (role.displayName || role.name) : selected;
+              }}
+            >
+              {availableRoles.map((role) => (
+                <MenuItem key={role.id} value={role.id}>
+                  <Box>
+                    <Typography variant="body1">{role.displayName || role.name}</Typography>
+                    {role.description && (
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        {role.description}
+                      </Typography>
+                    )}
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Changing a user's role will immediately update their permissions.
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setEditRoleDialog(false);
+              setSelectedUser(null);
+              setNewRoleId('');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpdateRole}
+            variant="contained"
+            disabled={updateRoleMutation.isLoading || !newRoleId}
+          >
+            {updateRoleMutation.isLoading ? 'Updating...' : 'Update Role'}
           </Button>
         </DialogActions>
       </Dialog>

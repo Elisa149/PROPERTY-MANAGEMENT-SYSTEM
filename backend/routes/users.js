@@ -13,6 +13,233 @@ const router = express.Router();
 // Use the already initialized Firebase app
 const db = admin.firestore();
 
+// Admin dashboard statistics endpoint
+router.get('/admin/dashboard/stats', verifyTokenWithRBAC, requireOrganization, async (req, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const userRole = req.user.role;
+    
+    // Only org admins and super admins can view admin dashboard
+    if (!userRole || !['org_admin', 'super_admin'].includes(userRole.name)) {
+      return res.status(403).json({ error: 'Only administrators can access admin dashboard' });
+    }
+    
+    // Get all properties in organization
+    const propertiesSnapshot = await db.collection('properties')
+      .where('organizationId', '==', organizationId)
+      .get();
+    
+    const properties = [];
+    let totalSpaces = 0;
+    let occupiedSpaces = 0;
+    
+    propertiesSnapshot.forEach(doc => {
+      const property = doc.data();
+      properties.push({ id: doc.id, ...property });
+      
+      // Calculate spaces
+      if (property.type === 'building' && property.buildingDetails?.floors) {
+        property.buildingDetails.floors.forEach(floor => {
+          const spaces = floor.spaces || [];
+          totalSpaces += spaces.length;
+          occupiedSpaces += spaces.filter(s => s.status === 'occupied').length;
+        });
+      } else if (property.type === 'land' && property.landDetails?.squatters) {
+        totalSpaces += property.landDetails.squatters.length;
+        occupiedSpaces += property.landDetails.squatters.filter(s => s.status === 'active').length;
+      }
+    });
+    
+    // Get all users in organization
+    const usersSnapshot = await db.collection('users')
+      .where('organizationId', '==', organizationId)
+      .get();
+    
+    const activeUsers = usersSnapshot.docs.filter(doc => doc.data().status === 'active').length;
+    
+    // Get pending access requests
+    const accessRequestsSnapshot = await db.collection('accessRequests')
+      .where('organizationId', '==', organizationId)
+      .where('status', '==', 'pending')
+      .get();
+    
+    const pendingApprovals = accessRequestsSnapshot.size;
+    
+    // Get all payments for the organization
+    const paymentsSnapshot = await db.collection('payments')
+      .where('organizationId', '==', organizationId)
+      .get();
+    
+    let totalRevenue = 0;
+    let currentMonthRevenue = 0;
+    let previousMonthRevenue = 0;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const previousMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+    const previousYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+    
+    paymentsSnapshot.forEach(doc => {
+      const payment = doc.data();
+      const amount = (payment.amount || 0) + (payment.lateFee || 0);
+      totalRevenue += amount;
+      
+      const paymentDate = payment.paymentDate?.toDate() || new Date();
+      const paymentMonth = paymentDate.getMonth();
+      const paymentYear = paymentDate.getFullYear();
+      
+      if (paymentMonth === currentMonth && paymentYear === currentYear) {
+        currentMonthRevenue += amount;
+      }
+      if (paymentMonth === previousMonth && paymentYear === previousYear) {
+        previousMonthRevenue += amount;
+      }
+    });
+    
+    // Calculate monthly growth
+    const monthlyGrowth = previousMonthRevenue > 0
+      ? ((currentMonthRevenue - previousMonthRevenue) / previousMonthRevenue) * 100
+      : currentMonthRevenue > 0 ? 100 : 0;
+    
+    // Calculate occupancy rate
+    const occupancyRate = totalSpaces > 0 ? (occupiedSpaces / totalSpaces) * 100 : 0;
+    
+    // Get rent agreements for collection rate
+    const rentSnapshot = await db.collection('rent')
+      .where('organizationId', '==', organizationId)
+      .where('status', '==', 'active')
+      .get();
+    
+    let expectedMonthlyRent = 0;
+    rentSnapshot.forEach(doc => {
+      const rent = doc.data();
+      expectedMonthlyRent += rent.monthlyRent || 0;
+    });
+    
+    const collectionRate = expectedMonthlyRent > 0
+      ? (currentMonthRevenue / expectedMonthlyRent) * 100
+      : 0;
+    
+    // Get top performing properties
+    const propertyRevenue = {};
+    paymentsSnapshot.forEach(doc => {
+      const payment = doc.data();
+      const propertyId = payment.propertyId;
+      if (!propertyRevenue[propertyId]) {
+        propertyRevenue[propertyId] = 0;
+      }
+      propertyRevenue[propertyId] += (payment.amount || 0) + (payment.lateFee || 0);
+    });
+    
+    const topProperties = properties
+      .map(property => {
+        let spaces = 0;
+        let occupied = 0;
+        
+        if (property.type === 'building' && property.buildingDetails?.floors) {
+          property.buildingDetails.floors.forEach(floor => {
+            const floorSpaces = floor.spaces || [];
+            spaces += floorSpaces.length;
+            occupied += floorSpaces.filter(s => s.status === 'occupied').length;
+          });
+        } else if (property.type === 'land' && property.landDetails?.squatters) {
+          spaces = property.landDetails.squatters.length;
+          occupied = property.landDetails.squatters.filter(s => s.status === 'active').length;
+        }
+        
+        return {
+          id: property.id,
+          name: property.name,
+          revenue: propertyRevenue[property.id] || 0,
+          occupancy: spaces > 0 ? Math.round((occupied / spaces) * 100) : 0,
+          trend: 'stable'
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+    
+    // Get recent activities (payments and user registrations)
+    const recentPayments = [];
+    paymentsSnapshot.forEach(doc => {
+      const payment = doc.data();
+      recentPayments.push({
+        id: doc.id,
+        type: 'payment',
+        amount: payment.amount,
+        propertyName: properties.find(p => p.id === payment.propertyId)?.name || 'Unknown Property',
+        timestamp: payment.paymentDate?.toDate() || payment.createdAt?.toDate() || new Date(),
+        status: 'success'
+      });
+    });
+    
+    const recentUsers = [];
+    usersSnapshot.forEach(doc => {
+      const user = doc.data();
+      recentUsers.push({
+        id: doc.id,
+        type: 'user',
+        userName: user.displayName,
+        timestamp: user.createdAt?.toDate() || new Date(),
+        status: user.status === 'active' ? 'success' : 'pending'
+      });
+    });
+    
+    const recentActivities = [...recentPayments, ...recentUsers]
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 10)
+      .map(activity => ({
+        ...activity,
+        message: activity.type === 'payment'
+          ? `Payment received from ${activity.propertyName}`
+          : `New user registration: ${activity.userName}`,
+        time: formatTimeAgo(activity.timestamp)
+      }));
+    
+    // Get pending access requests details
+    const pendingApprovalsDetails = [];
+    accessRequestsSnapshot.forEach(doc => {
+      const request = doc.data();
+      pendingApprovalsDetails.push({
+        id: doc.id,
+        userName: request.displayName,
+        email: request.userEmail,
+        requestedRole: request.requestedRoleName || 'Unknown',
+        requestDate: request.requestedAt?.toDate() || new Date(),
+        message: request.message || 'No message provided'
+      });
+    });
+    
+    res.json({
+      stats: {
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        monthlyGrowth: Math.round(monthlyGrowth * 100) / 100,
+        totalProperties: properties.length,
+        activeUsers,
+        pendingApprovals,
+        collectionRate: Math.round(collectionRate * 100) / 100,
+        occupancyRate: Math.round(occupancyRate * 100) / 100,
+      },
+      topProperties,
+      recentActivities,
+      pendingApprovals: pendingApprovalsDetails.slice(0, 5),
+    });
+  } catch (error) {
+    console.error('Admin dashboard stats error:', error);
+    res.status(500).json({ error: 'Failed to get admin dashboard statistics' });
+  }
+});
+
+// Helper function to format time ago
+function formatTimeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)} days ago`;
+  return date.toLocaleDateString();
+}
+
 // User management routes with RBAC
 
 // Get all users in organization (Admin only)
@@ -255,6 +482,57 @@ router.get('/', verifyTokenWithRBAC, isSuperAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// Update user's role (Org Admin only) - Enhanced role management
+router.put('/:userId/role', verifyTokenWithRBAC, requireOrganization, requirePermission('users:update:organization'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { roleId } = req.body;
+    
+    if (!roleId) {
+      return res.status(400).json({ error: 'Role ID is required' });
+    }
+    
+    // Verify user exists and belongs to same organization
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    if (userData.organizationId !== req.user.organizationId) {
+      return res.status(403).json({ error: 'User not in your organization' });
+    }
+    
+    // Verify role exists and belongs to same organization
+    const roleDoc = await db.collection('roles').doc(roleId).get();
+    if (!roleDoc.exists) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+    
+    const roleData = roleDoc.data();
+    if (roleData.organizationId !== req.user.organizationId) {
+      return res.status(403).json({ error: 'Role not in your organization' });
+    }
+    
+    // Update user's role
+    await db.collection('users').doc(userId).update({
+      roleId: roleId,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    
+    res.json({ 
+      message: 'User role updated successfully',
+      user: {
+        id: userId,
+        roleId: roleId
+      }
+    });
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    res.status(500).json({ error: 'Failed to update user role' });
   }
 });
 

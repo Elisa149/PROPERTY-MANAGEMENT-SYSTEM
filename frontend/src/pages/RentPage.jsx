@@ -60,6 +60,7 @@ import toast from 'react-hot-toast';
 import { propertiesAPI, rentAPI, paymentsAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import PropertySelectorDialog from '../components/PropertySelectorDialog';
+import PaymentReceipt from '../components/PaymentReceipt';
 
 // Helper functions
 const formatCurrency = (amount) => {
@@ -97,6 +98,8 @@ const RentPage = () => {
   const [propertyDialog, setPropertyDialog] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedRent, setSelectedRent] = useState(null);
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [lastCreatedPayment, setLastCreatedPayment] = useState(null);
   
   const [newPayment, setNewPayment] = useState({
     rentId: '',
@@ -140,11 +143,21 @@ const RentPage = () => {
 
   // Create payment mutation
   const createPaymentMutation = useMutation(paymentsAPI.create, {
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries('payments');
       queryClient.invalidateQueries('rent');
       toast.success('Payment recorded successfully!');
       setPaymentDialogOpen(false);
+      
+      // Store the created payment for receipt
+      const createdPayment = response.data.payment;
+      setLastCreatedPayment({
+        ...createdPayment,
+        tenantName: selectedRent?.tenantName,
+        propertyName: selectedRent?.propertyName,
+      });
+      setReceiptDialogOpen(true);
+      
       resetPaymentForm();
     },
     onError: (error) => {
@@ -237,16 +250,17 @@ const RentPage = () => {
       return;
     }
     
+    // Only send fields that are allowed by the backend validation schema
     const paymentData = {
       rentId: newPayment.rentId,
       propertyId: selectedRent?.propertyId,
-      tenantName: selectedRent?.tenantName,
       amount: parseFloat(newPayment.amount),
       paymentDate: newPayment.paymentDate,
       paymentMethod: newPayment.paymentMethod,
-      transactionId: newPayment.transactionId,
-      notes: newPayment.notes,
-      paymentType: 'rent',
+      transactionId: newPayment.transactionId || '',
+      notes: newPayment.notes || '',
+      lateFee: 0,
+      status: 'completed',
     };
     
     createPaymentMutation.mutate(paymentData);
@@ -742,6 +756,13 @@ const RentPage = () => {
         open={propertyDialog}
         onClose={() => setPropertyDialog(false)}
         title="Select Property to Assign Tenant"
+      />
+
+      {/* Payment Receipt Dialog */}
+      <PaymentReceipt
+        payment={lastCreatedPayment}
+        open={receiptDialogOpen}
+        onClose={() => setReceiptDialogOpen(false)}
       />
 
       {/* Record Payment Dialog */}

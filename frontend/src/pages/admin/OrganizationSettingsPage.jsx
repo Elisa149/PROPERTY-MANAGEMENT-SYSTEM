@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   Box,
   Typography,
@@ -40,55 +41,104 @@ import {
   Delete,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
+import { organizationsAPI, usersAPI, propertiesAPI } from '../../services/api';
+import LoadingSpinner from '../../components/common/LoadingSpinner';
 import toast from 'react-hot-toast';
 
 const OrganizationSettingsPage = () => {
+  const queryClient = useQueryClient();
   const { userRole, organizationId } = useAuth();
   const [orgSettings, setOrgSettings] = useState({
-    name: 'Default Property Management',
-    description: 'Professional property management services',
-    timezone: 'UTC',
-    currency: 'UGX',
-    dateFormat: 'DD/MM/YYYY',
-    allowGoogleAuth: true,
-    allowEmailAuth: true,
-    autoApproveUsers: false,
-    requireTwoFactor: false,
-    sessionTimeout: 60, // minutes
+    name: '',
+    description: '',
+    settings: {
+      timezone: 'UTC',
+      currency: 'UGX',
+      dateFormat: 'DD/MM/YYYY',
+      allowGoogleAuth: true,
+      allowEmailAuth: true,
+    },
+    contact: {
+      email: '',
+      phone: '',
+      address: '',
+    },
+    status: 'active',
   });
   const [editing, setEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [inviteDialog, setInviteDialog] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('');
 
-  // Mock data for demonstration
+  // Fetch organization data
+  const { 
+    data: orgData, 
+    isLoading: orgLoading,
+    error: orgError 
+  } = useQuery(
+    ['organization', organizationId],
+    () => organizationsAPI.getById(organizationId),
+    { enabled: !!organizationId }
+  );
+
+  // Fetch users for stats
+  const { data: usersData } = useQuery(
+    'organizationUsers',
+    usersAPI.getAll,
+    { enabled: !!organizationId }
+  );
+
+  // Fetch properties for stats
+  const { data: propertiesData } = useQuery(
+    'properties',
+    propertiesAPI.getAll,
+    { enabled: !!organizationId }
+  );
+
+  // Fetch available roles
+  const { data: rolesData } = useQuery(
+    ['organizationRoles', organizationId],
+    () => organizationsAPI.getRoles(organizationId),
+    { enabled: !!organizationId }
+  );
+
+  // Update organization mutation
+  const updateOrgMutation = useMutation(
+    (data) => organizationsAPI.update(organizationId, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['organization', organizationId]);
+        toast.success('Organization settings updated successfully');
+        setEditing(false);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to update settings');
+      },
+    }
+  );
+
+  // Load organization data when fetched
+  useEffect(() => {
+    if (orgData?.data?.organization) {
+      setOrgSettings(orgData.data.organization);
+    }
+  }, [orgData]);
+
+  const organization = orgData?.data?.organization || {};
+  const users = usersData?.data?.users || [];
+  const properties = propertiesData?.data?.properties || [];
+  const availableRoles = rolesData?.roles || [];
+
   const orgStats = {
-    totalUsers: 5,
-    activeUsers: 4,
-    pendingUsers: 1,
-    totalProperties: 12,
-    totalRevenue: 'UGX 2,450,000',
+    totalUsers: users.length,
+    activeUsers: users.filter(u => u.status === 'active').length,
+    pendingUsers: users.filter(u => u.status === 'pending' || u.status === 'pending_approval').length,
+    totalProperties: properties.length,
+    totalRevenue: 'UGX 0', // Would calculate from payments
   };
 
-  const availableRoles = [
-    { id: '1', name: 'Property Manager', description: 'Manages assigned properties' },
-    { id: '2', name: 'Financial Viewer', description: 'Access to financial data' },
-    { id: '3', name: 'Caretaker', description: 'On-site maintenance' },
-  ];
-
-  const handleSaveSettings = async () => {
-    setLoading(true);
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success('Organization settings updated successfully');
-      setEditing(false);
-    } catch (error) {
-      toast.error('Failed to update settings');
-    } finally {
-      setLoading(false);
-    }
+  const handleSaveSettings = () => {
+    updateOrgMutation.mutate(orgSettings);
   };
 
   const handleInviteUser = async () => {
@@ -97,16 +147,10 @@ const OrganizationSettingsPage = () => {
       return;
     }
 
-    try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      toast.success(`Invitation sent to ${inviteEmail}`);
-      setInviteDialog(false);
-      setInviteEmail('');
-      setInviteRole('');
-    } catch (error) {
-      toast.error('Failed to send invitation');
-    }
+    toast.info('User invitation feature coming soon. For now, use User Management to approve access requests.');
+    setInviteDialog(false);
+    setInviteEmail('');
+    setInviteRole('');
   };
 
   if (!userRole || !['org_admin', 'super_admin'].includes(userRole.name)) {
@@ -115,6 +159,20 @@ const OrganizationSettingsPage = () => {
         <Alert severity="error">
           <Typography variant="h6">Access Denied</Typography>
           <Typography>Only organization administrators can access settings.</Typography>
+        </Alert>
+      </Box>
+    );
+  }
+
+  if (orgLoading) {
+    return <LoadingSpinner message="Loading organization settings..." />;
+  }
+
+  if (orgError) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          Failed to load organization settings. Please try again.
         </Alert>
       </Box>
     );
@@ -193,9 +251,9 @@ const OrganizationSettingsPage = () => {
                       startIcon={<Save />} 
                       variant="contained"
                       onClick={handleSaveSettings}
-                      disabled={loading}
+                      disabled={updateOrgMutation.isLoading}
                     >
-                      Save Changes
+                      {updateOrgMutation.isLoading ? 'Saving...' : 'Save Changes'}
                     </Button>
                   </Box>
                 )}
@@ -206,7 +264,7 @@ const OrganizationSettingsPage = () => {
                   <TextField
                     fullWidth
                     label="Organization Name"
-                    value={orgSettings.name}
+                    value={orgSettings.name || ''}
                     onChange={(e) => setOrgSettings({...orgSettings, name: e.target.value})}
                     disabled={!editing}
                   />
@@ -217,7 +275,7 @@ const OrganizationSettingsPage = () => {
                     multiline
                     rows={3}
                     label="Description"
-                    value={orgSettings.description}
+                    value={orgSettings.description || ''}
                     onChange={(e) => setOrgSettings({...orgSettings, description: e.target.value})}
                     disabled={!editing}
                   />
@@ -226,9 +284,12 @@ const OrganizationSettingsPage = () => {
                   <FormControl fullWidth disabled={!editing}>
                     <InputLabel>Timezone</InputLabel>
                     <Select
-                      value={orgSettings.timezone}
+                      value={orgSettings.settings?.timezone || 'UTC'}
                       label="Timezone"
-                      onChange={(e) => setOrgSettings({...orgSettings, timezone: e.target.value})}
+                      onChange={(e) => setOrgSettings({
+                        ...orgSettings, 
+                        settings: { ...orgSettings.settings, timezone: e.target.value }
+                      })}
                     >
                       <MenuItem value="UTC">UTC</MenuItem>
                       <MenuItem value="Africa/Kampala">East Africa Time</MenuItem>
@@ -241,9 +302,12 @@ const OrganizationSettingsPage = () => {
                   <FormControl fullWidth disabled={!editing}>
                     <InputLabel>Currency</InputLabel>
                     <Select
-                      value={orgSettings.currency}
+                      value={orgSettings.settings?.currency || 'UGX'}
                       label="Currency"
-                      onChange={(e) => setOrgSettings({...orgSettings, currency: e.target.value})}
+                      onChange={(e) => setOrgSettings({
+                        ...orgSettings,
+                        settings: { ...orgSettings.settings, currency: e.target.value }
+                      })}
                     >
                       <MenuItem value="UGX">UGX (Ugandan Shilling)</MenuItem>
                       <MenuItem value="USD">USD (US Dollar)</MenuItem>
@@ -251,6 +315,30 @@ const OrganizationSettingsPage = () => {
                       <MenuItem value="GBP">GBP (British Pound)</MenuItem>
                     </Select>
                   </FormControl>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Contact Email"
+                    value={orgSettings.contact?.email || ''}
+                    onChange={(e) => setOrgSettings({
+                      ...orgSettings,
+                      contact: { ...orgSettings.contact, email: e.target.value }
+                    })}
+                    disabled={!editing}
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    label="Contact Phone"
+                    value={orgSettings.contact?.phone || ''}
+                    onChange={(e) => setOrgSettings({
+                      ...orgSettings,
+                      contact: { ...orgSettings.contact, phone: e.target.value }
+                    })}
+                    disabled={!editing}
+                  />
                 </Grid>
               </Grid>
             </CardContent>
@@ -271,8 +359,11 @@ const OrganizationSettingsPage = () => {
                   <ListItemText primary="Google Authentication" />
                   <ListItemSecondaryAction>
                     <Switch
-                      checked={orgSettings.allowGoogleAuth}
-                      onChange={(e) => setOrgSettings({...orgSettings, allowGoogleAuth: e.target.checked})}
+                      checked={orgSettings.settings?.allowGoogleAuth || false}
+                      onChange={(e) => setOrgSettings({
+                        ...orgSettings,
+                        settings: { ...orgSettings.settings, allowGoogleAuth: e.target.checked }
+                      })}
                       disabled={!editing}
                     />
                   </ListItemSecondaryAction>
@@ -282,8 +373,11 @@ const OrganizationSettingsPage = () => {
                   <ListItemText primary="Email Authentication" />
                   <ListItemSecondaryAction>
                     <Switch
-                      checked={orgSettings.allowEmailAuth}
-                      onChange={(e) => setOrgSettings({...orgSettings, allowEmailAuth: e.target.checked})}
+                      checked={orgSettings.settings?.allowEmailAuth || false}
+                      onChange={(e) => setOrgSettings({
+                        ...orgSettings,
+                        settings: { ...orgSettings.settings, allowEmailAuth: e.target.checked }
+                      })}
                       disabled={!editing}
                     />
                   </ListItemSecondaryAction>
@@ -291,25 +385,27 @@ const OrganizationSettingsPage = () => {
                 
                 <ListItem>
                   <ListItemText 
-                    primary="Auto-approve Users" 
-                    secondary="New users get access immediately"
+                    primary="Manual Approval Required" 
+                    secondary="Admin must approve new users"
                   />
                   <ListItemSecondaryAction>
-                    <Switch
-                      checked={orgSettings.autoApproveUsers}
-                      onChange={(e) => setOrgSettings({...orgSettings, autoApproveUsers: e.target.checked})}
-                      disabled={!editing}
+                    <Chip 
+                      label="Enabled" 
+                      color="info" 
+                      size="small" 
                     />
                   </ListItemSecondaryAction>
                 </ListItem>
                 
                 <ListItem>
-                  <ListItemText primary="Require Two-Factor Auth" />
+                  <ListItemText 
+                    primary="Organization Status" 
+                  />
                   <ListItemSecondaryAction>
-                    <Switch
-                      checked={orgSettings.requireTwoFactor}
-                      onChange={(e) => setOrgSettings({...orgSettings, requireTwoFactor: e.target.checked})}
-                      disabled={!editing}
+                    <Chip 
+                      label={orgSettings.status || 'active'} 
+                      color={orgSettings.status === 'active' ? 'success' : 'default'}
+                      size="small" 
                     />
                   </ListItemSecondaryAction>
                 </ListItem>

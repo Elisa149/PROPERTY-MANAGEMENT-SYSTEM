@@ -148,6 +148,16 @@ export const usersAPI = {
   getById: (id) => api.get(`/users/${id}`),
   updateProfile: (id, data) => api.put(`/users/${id}/profile`, data),
   updateRole: (id, data) => api.put(`/users/${id}/role`, data),
+  getAdminDashboardStats: () => api.get('/users/admin/dashboard/stats'),
+};
+
+export const organizationsAPI = {
+  getAll: () => api.get('/organizations'),
+  getById: (id) => api.get(`/organizations/${id}`),
+  create: (data) => api.post('/organizations', data),
+  update: (id, data) => api.put(`/organizations/${id}`, data),
+  delete: (id) => api.delete(`/organizations/${id}`),
+  getRoles: (id) => api.get(`/organizations/${id}/roles`),
 };
 
 export default api;

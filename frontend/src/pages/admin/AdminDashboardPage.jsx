@@ -22,6 +22,7 @@ import {
   IconButton,
   Button,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import {
   Dashboard,
@@ -43,99 +44,47 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { format } from 'date-fns';
+import { useQuery } from 'react-query';
+import { usersAPI } from '../../services/api';
+import toast from 'react-hot-toast';
 
 const AdminDashboardPage = () => {
   const { userRole, userProfile } = useAuth();
 
-  // Mock dashboard data
-  const dashboardStats = {
-    totalRevenue: 2450000,
-    monthlyGrowth: 12.5,
-    totalProperties: 12,
-    activeUsers: 15,
-    pendingApprovals: 3,
-    maintenanceRequests: 8,
-    collectionRate: 94.2,
-    occupancyRate: 89.5,
+  // Fetch admin dashboard data from API
+  const {
+    data: dashboardData,
+    isLoading,
+    error,
+  } = useQuery('adminDashboardStats', usersAPI.getAdminDashboardStats, {
+    retry: 2,
+    retryDelay: 1000,
+    onError: (error) => {
+      console.error('Admin dashboard error:', error);
+      toast.error(error.response?.data?.error || 'Failed to load dashboard data');
+    }
+  });
+
+  const dashboardStats = dashboardData?.data?.stats || {
+    totalRevenue: 0,
+    monthlyGrowth: 0,
+    totalProperties: 0,
+    activeUsers: 0,
+    pendingApprovals: 0,
+    collectionRate: 0,
+    occupancyRate: 0,
   };
 
-  const recentActivities = [
-    {
-      id: 1,
-      type: 'payment',
-      message: 'Payment received from OSC Building Unit 3',
-      amount: 350000,
-      time: '2 hours ago',
-      status: 'success'
-    },
-    {
-      id: 2,
-      type: 'user',
-      message: 'New user registration: Jane Smith',
-      time: '4 hours ago',
-      status: 'pending'
-    },
-    {
-      id: 3,
-      type: 'maintenance',
-      message: 'Maintenance request at Downtown Complex',
-      time: '6 hours ago',
-      status: 'warning'
-    },
-    {
-      id: 4,
-      type: 'property',
-      message: 'New property added: Suburb Apartments',
-      time: '1 day ago',
-      status: 'success'
-    },
-  ];
-
-  const pendingApprovals = [
-    {
-      id: 1,
-      userName: 'John Doe',
-      email: 'john@example.com',
-      requestedRole: 'Property Manager',
-      requestDate: '2025-01-20',
-      message: 'Experienced in property management with 5 years background'
-    },
-    {
-      id: 2,
-      userName: 'Sarah Wilson',
-      email: 'sarah@example.com',
-      requestedRole: 'Financial Viewer',
-      requestDate: '2025-01-19',
-      message: 'Need access to financial reports for accounting purposes'
-    },
-    {
-      id: 3,
-      userName: 'Mike Johnson',
-      email: 'mike@example.com',
-      requestedRole: 'Caretaker',
-      requestDate: '2025-01-18',
-      message: 'On-site maintenance staff for OSC properties'
-    },
-  ];
-
-  const topProperties = [
-    { name: 'OSC Building', revenue: 1200000, occupancy: 95, trend: 'up' },
-    { name: 'OSC Land', revenue: 800000, occupancy: 85, trend: 'up' },
-    { name: 'Downtown Complex', revenue: 450000, occupancy: 78, trend: 'down' },
-  ];
+  const recentActivities = dashboardData?.data?.recentActivities || [];
+  const pendingApprovals = dashboardData?.data?.pendingApprovals || [];
+  const topProperties = dashboardData?.data?.topProperties || [];
 
   const systemAlerts = [
     {
       id: 1,
-      type: 'warning',
-      message: 'Server backup completed with warnings',
-      time: '1 hour ago'
-    },
-    {
-      id: 2,
       type: 'info',
-      message: 'System maintenance scheduled for Sunday 2 AM',
-      time: '3 hours ago'
+      message: 'System running smoothly',
+      time: 'Now'
     },
   ];
 
@@ -145,6 +94,27 @@ const AdminDashboardPage = () => {
         <Alert severity="error">
           <Typography variant="h6">Access Denied</Typography>
           <Typography>Only organization administrators can access the admin dashboard.</Typography>
+        </Alert>
+      </Box>
+    );
+  }
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <CircularProgress size={60} />
+      </Box>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          <Typography variant="h6">Error Loading Dashboard</Typography>
+          <Typography>{error.response?.data?.error || 'Failed to load dashboard data. Please try again.'}</Typography>
         </Alert>
       </Box>
     );
@@ -290,7 +260,11 @@ const AdminDashboardPage = () => {
                           <TableCell>
                             <Chip label={approval.requestedRole} size="small" />
                           </TableCell>
-                          <TableCell>{approval.requestDate}</TableCell>
+                          <TableCell>
+                            {approval.requestDate instanceof Date 
+                              ? format(approval.requestDate, 'MMM dd, yyyy')
+                              : approval.requestDate}
+                          </TableCell>
                           <TableCell sx={{ maxWidth: 200 }}>
                             <Typography variant="body2" noWrap>
                               {approval.message}

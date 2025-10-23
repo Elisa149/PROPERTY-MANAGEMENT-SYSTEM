@@ -1,0 +1,18 @@
+🚀 READY TO PUSH TO GITHUB!
+
+Your code is committed and ready. Now:
+
+1. CREATE THE GITHUB REPOSITORY FIRST:
+   - Go to: https://github.com/new
+   - Name: PROPERTY-MANAGEMENT-SYSTEM
+   - Click "Create repository"
+
+2. THEN RUN THIS COMMAND:
+   git push -u origin main
+
+3. IF IT ASKS FOR PASSWORD:
+   - Use a Personal Access Token (not your GitHub password)
+   - Get one at: https://github.com/settings/tokens
+
+THAT'S IT! ✅
+
