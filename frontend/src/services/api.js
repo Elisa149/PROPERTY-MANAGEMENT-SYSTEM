@@ -1,7 +1,7 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 // Create axios instance
 const api = axios.create({
@@ -80,6 +80,23 @@ api.interceptors.response.use(
       }
     }
     
+    // Handle 403 errors (forbidden - organization/permission issues)
+    if (error.response?.status === 403) {
+      const errorData = error.response.data;
+      const errorMessage = errorData?.message || errorData?.error || 'Access denied';
+      
+      // Show helpful message for organization membership issues
+      if (errorMessage.includes('organization') || errorMessage.includes('Organization')) {
+        toast.error('Organization membership required. Please contact your administrator to be added to an organization.');
+      } else if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
+        toast.error('You do not have permission to perform this action.');
+      } else {
+        toast.error(errorMessage);
+      }
+      
+      return Promise.reject(error);
+    }
+    
     const message = error.response?.data?.error || error.message || 'An error occurred';
     
     // Don't show toast for 401 errors (handled above)
@@ -114,6 +131,7 @@ export const propertiesAPI = {
 
 export const rentAPI = {
   getAll: () => api.get('/rent'),
+  getAllRentRecords: () => api.get('/rent/all'), // Super Admin - all rent records across organizations
   getById: (id) => api.get(`/rent/${id}`),
   getByProperty: (propertyId) => api.get(`/rent/property/${propertyId}`),
   create: (data) => api.post('/rent', data),
@@ -145,6 +163,7 @@ export const tenantsAPI = {
 
 export const usersAPI = {
   getAll: () => api.get('/users'),
+  getAllUsers: () => api.get('/users/all'), // Super Admin - all users across organizations
   getById: (id) => api.get(`/users/${id}`),
   updateProfile: (id, data) => api.put(`/users/${id}/profile`, data),
   updateRole: (id, data) => api.put(`/users/${id}/role`, data),
@@ -158,6 +177,9 @@ export const organizationsAPI = {
   update: (id, data) => api.put(`/organizations/${id}`, data),
   delete: (id) => api.delete(`/organizations/${id}`),
   getRoles: (id) => api.get(`/organizations/${id}/roles`),
+  getUsers: (id) => api.get(`/organizations/${id}/users`),
+  updateUserRole: (orgId, userId, roleId) => api.put(`/organizations/${orgId}/users/${userId}/role`, { roleId }),
+  removeUser: (orgId, userId) => api.delete(`/organizations/${orgId}/users/${userId}`),
 };
 
 export default api;

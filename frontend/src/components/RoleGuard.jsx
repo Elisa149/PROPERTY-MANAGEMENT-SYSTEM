@@ -11,7 +11,7 @@ const RoleGuard = ({
   fallbackComponent,
   redirectTo = '/app/dashboard'
 }) => {
-  const { userRole, hasPermission, hasAnyPermission, hasRole, loading } = useAuth();
+  const { userRole, hasPermission, hasAnyPermission, hasRole, isSuperAdmin, loading } = useAuth();
 
   // Show loading while auth is being determined
   if (loading) {
@@ -20,6 +20,12 @@ const RoleGuard = ({
         <Typography>Loading...</Typography>
       </Box>
     );
+  }
+
+  // Super admins bypass all permission and role checks
+  if (isSuperAdmin()) {
+    console.log('✅ Super Admin detected - bypassing all checks');
+    return children;
   }
 
   // Check role requirements

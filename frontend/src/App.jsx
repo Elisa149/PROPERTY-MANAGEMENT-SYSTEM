@@ -29,8 +29,15 @@ import UserManagementPage from './pages/UserManagementPage';
 // Admin pages
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import OrganizationSettingsPage from './pages/admin/OrganizationSettingsPage';
+import OrganizationManagementPage from './pages/admin/OrganizationManagementPage';
 import AnalyticsPage from './pages/admin/AnalyticsPage';
 import PropertyAssignmentPage from './pages/admin/PropertyAssignmentPage';
+// Super Admin pages
+import SystemAdminDashboardPage from './pages/admin/SystemAdminDashboardPage';
+import GlobalUserManagementPage from './pages/admin/GlobalUserManagementPage';
+import SystemSettingsPage from './pages/admin/SystemSettingsPage';
+import GlobalAnalyticsPage from './pages/admin/GlobalAnalyticsPage';
+import GlobalRentManagementPage from './pages/admin/GlobalRentManagementPage';
 
 // Protected route wrapper with RBAC
 const ProtectedRoute = ({ children }) => {
@@ -175,6 +182,7 @@ function App() {
                      <OrganizationSettingsPage />
                    </RoleGuard>
                  } />
+                 {/* Organization Analytics - Org Admins and Financial Viewers */}
                  <Route path="admin/analytics" element={
                    <RoleGuard requiredPermissions={['reports:read:organization']}>
                      <AnalyticsPage />
@@ -183,6 +191,42 @@ function App() {
                  <Route path="admin/assignments" element={
                    <RoleGuard requiredRoles={['org_admin', 'super_admin']}>
                      <PropertyAssignmentPage />
+                   </RoleGuard>
+                 } />
+                 {/* Organization Management - Super Admin only */}
+                 <Route path="admin/organizations" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <OrganizationManagementPage />
+                   </RoleGuard>
+                 } />
+                 {/* System Admin Dashboard - Super Admin only */}
+                 <Route path="admin/system" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <SystemAdminDashboardPage />
+                   </RoleGuard>
+                 } />
+                 {/* Global User Management - Super Admin only */}
+                 <Route path="admin/users" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <GlobalUserManagementPage />
+                   </RoleGuard>
+                 } />
+                 {/* System Settings - Super Admin only */}
+                 <Route path="admin/system-settings" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <SystemSettingsPage />
+                   </RoleGuard>
+                 } />
+                 {/* Global Analytics - Super Admin only (different route) */}
+                 <Route path="admin/global-analytics" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <GlobalAnalyticsPage />
+                   </RoleGuard>
+                 } />
+                 {/* Global Rent Management - Super Admin only */}
+                 <Route path="admin/rent" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <GlobalRentManagementPage />
                    </RoleGuard>
                  } />
         </Route>

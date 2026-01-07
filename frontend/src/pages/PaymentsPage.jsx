@@ -118,23 +118,13 @@ const PaymentsPage = () => {
   // Fetch properties for filter
   const { data: propertiesData } = useQuery('properties', propertiesAPI.getAll);
 
-  if (paymentsLoading) {
-    return <LoadingSpinner message="Loading payments..." />;
-  }
-
-  if (paymentsError) {
-    return (
-      <Alert severity="error" sx={{ m: 3 }}>
-        Failed to load payments. Please try again.
-      </Alert>
-    );
-  }
-
+  // Extract data (must be before early returns to maintain hook order)
   const payments = paymentsData?.data?.payments || [];
   const properties = propertiesData?.data?.properties || [];
 
-  // Filter and search payments
+  // Filter and search payments (must be before early returns)
   const filteredPayments = useMemo(() => {
+    if (!payments || payments.length === 0) return [];
     return payments.filter(payment => {
       // Search filter
       const searchLower = searchQuery.toLowerCase();
@@ -165,8 +155,19 @@ const PaymentsPage = () => {
     });
   }, [payments, searchQuery, filterProperty, filterMethod, filterStatus, dateRange]);
 
-  // Calculate statistics
+  // Calculate statistics (must be before early returns)
   const stats = useMemo(() => {
+    if (!filteredPayments || filteredPayments.length === 0) {
+      return {
+        total: 0,
+        totalWithFees: 0,
+        totalFees: 0,
+        count: 0,
+        completed: 0,
+        pending: 0,
+        byMethod: {}
+      };
+    }
     const total = filteredPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
     const totalWithFees = filteredPayments.reduce((sum, p) => sum + (p.amount || 0) + (p.lateFee || 0), 0);
     const totalFees = filteredPayments.reduce((sum, p) => sum + (p.lateFee || 0), 0);

@@ -170,44 +170,32 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Check if user has specific permission
-  const hasPermission = (permission) => {
+  const hasPermission = React.useCallback((permission) => {
     return userPermissions.includes(permission);
-  };
+  }, [userPermissions]);
 
   // Check if user has any of the specified permissions
-  const hasAnyPermission = (permissions) => {
-    console.log('🔍 hasAnyPermission called:', {
-      requestedPermissions: permissions,
-      userPermissions,
-      userPermissionsLength: userPermissions?.length,
-      result: permissions.some(permission => userPermissions.includes(permission))
-    });
+  const hasAnyPermission = React.useCallback((permissions) => {
+    if (!userPermissions || userPermissions.length === 0) {
+      return false;
+    }
     return permissions.some(permission => userPermissions.includes(permission));
-  };
+  }, [userPermissions]);
 
   // Check if user has specific role
-  const hasRole = (roleName) => {
-    const result = userRole && userRole.name === roleName;
-    console.log('🔍 hasRole called:', {
-      requestedRole: roleName,
-      userRole,
-      userRoleName: userRole?.name,
-      result
-    });
-    return result;
-  };
+  const hasRole = React.useCallback((roleName) => {
+    return userRole && userRole.name === roleName;
+  }, [userRole]);
 
   // Check if user is admin (org admin or super admin)
-  const isAdmin = () => {
-    const result = hasRole('org_admin') || hasRole('super_admin');
-    console.log('🔍 isAdmin called:', {
-      userRole,
-      hasOrgAdmin: hasRole('org_admin'),
-      hasSuperAdmin: hasRole('super_admin'),
-      result
-    });
-    return result;
-  };
+  const isAdmin = React.useCallback(() => {
+    return userRole && (userRole.name === 'org_admin' || userRole.name === 'super_admin');
+  }, [userRole]);
+
+  // Check if user is super admin
+  const isSuperAdmin = React.useCallback(() => {
+    return userRole && userRole.name === 'super_admin';
+  }, [userRole]);
 
   // Refresh token when it expires
   const refreshToken = async () => {
@@ -311,12 +299,13 @@ export const AuthProvider = ({ children }) => {
     hasAnyPermission,
     hasRole,
     isAdmin,
+    isSuperAdmin,
     loading,
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };

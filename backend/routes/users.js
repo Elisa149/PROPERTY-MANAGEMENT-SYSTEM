@@ -435,8 +435,8 @@ router.get('/invitations', verifyTokenWithRBAC, async (req, res) => {
   }
 });
 
-// Get all users (Super Admin only)
-router.get('/', verifyTokenWithRBAC, isSuperAdmin, async (req, res) => {
+// Get all users across all organizations (Super Admin only)
+router.get('/all', verifyTokenWithRBAC, isSuperAdmin, async (req, res) => {
   try {
     const { page = 1, limit = 50, organizationId } = req.query;
     

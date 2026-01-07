@@ -1,6 +1,7 @@
 const admin = require('firebase-admin');
 const { ROLE_PERMISSIONS } = require('../models/rbac-schemas');
 
+
 // Enhanced authentication middleware with RBAC
 const verifyTokenWithRBAC = async (req, res, next) => {
   try {
@@ -58,16 +59,94 @@ const verifyTokenWithRBAC = async (req, res, next) => {
         const roleDoc = await db.collection('roles').doc(userProfile.roleId).get();
         if (roleDoc.exists) {
           role = roleDoc.data();
-          permissions = [...permissions, ...(role.permissions || [])];
+          const rolePermissions = role.permissions || [];
+          
+          // If role document has no permissions, try to get from ROLE_PERMISSIONS by role name
+          if (rolePermissions.length === 0 && role.name && ROLE_PERMISSIONS[role.name]) {
+            console.log(`⚠️ Role document has no permissions, using fallback from ROLE_PERMISSIONS for ${role.name}`);
+            permissions = [...permissions, ...ROLE_PERMISSIONS[role.name]];
+          } else {
+            permissions = [...permissions, ...rolePermissions];
+          }
+        } else {
+          // Role document doesn't exist, try to find by name or use system role
+          console.log(`⚠️ Role document ${userProfile.roleId} not found, trying to find by name`);
+          const rolesByName = await db.collection('roles')
+            .where('name', '==', userProfile.roleId)
+            .limit(1)
+            .get();
+          
+          if (!rolesByName.empty) {
+            role = rolesByName.docs[0].data();
+            const rolePermissions = role.permissions || [];
+            if (rolePermissions.length === 0 && role.name && ROLE_PERMISSIONS[role.name]) {
+              permissions = [...permissions, ...ROLE_PERMISSIONS[role.name]];
+            } else {
+              permissions = [...permissions, ...rolePermissions];
+            }
+          } else if (ROLE_PERMISSIONS[userProfile.roleId]) {
+            // Use system role definition as fallback
+            console.log(`✅ Using system role definition for ${userProfile.roleId}`);
+            role = {
+              name: userProfile.roleId,
+              displayName: userProfile.roleId === 'property_manager' ? 'Property Manager' : 
+                          userProfile.roleId === 'org_admin' ? 'Organization Administrator' :
+                          userProfile.roleId === 'financial_viewer' ? 'Financial Viewer' : userProfile.roleId,
+              level: userProfile.roleId === 'property_manager' ? 6 :
+                     userProfile.roleId === 'org_admin' ? 9 :
+                     userProfile.roleId === 'financial_viewer' ? 4 : 5,
+              isSystemRole: true,
+            };
+            permissions = [...permissions, ...ROLE_PERMISSIONS[userProfile.roleId]];
+          }
         }
       }
       
+      // Fallback: Check if user has roleId that matches 'super_admin' name pattern
+      // or if roleId is stored as string 'super_admin'
+      if (!role && userProfile.roleId === 'super_admin') {
+        // Try to find super_admin role by name
+        const rolesSnapshot = await db.collection('roles')
+          .where('name', '==', 'super_admin')
+          .limit(1)
+          .get();
+        
+        if (!rolesSnapshot.empty) {
+          role = rolesSnapshot.docs[0].data();
+          permissions = [...permissions, ...(role.permissions || [])];
+        } else {
+          // If no role document found but roleId is 'super_admin', create role object
+          role = {
+            name: 'super_admin',
+            displayName: 'Super Administrator',
+            level: 10,
+            isSystemRole: true,
+          };
+          // Super admin has all permissions
+          permissions = ROLE_PERMISSIONS.super_admin || [];
+        }
+      }
+      
+      // Get organizationId from userProfile, with fallback to profile.organizationId
+      const organizationId = userProfile.organizationId || userProfile.profile?.organizationId || null;
+      
+      console.log('🔍 User authentication:', {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        organizationId: organizationId,
+        hasRole: !!role,
+        roleName: role?.name,
+        permissionsCount: permissions.length
+      });
+      
       req.user = {
         ...decodedToken,
+        uid: decodedToken.uid,
+        email: decodedToken.email,
         profile: userProfile,
         role: role,
         permissions: [...new Set(permissions)], // Remove duplicates
-        organizationId: userProfile.organizationId,
+        organizationId: organizationId,
       };
     }
     
@@ -78,13 +157,57 @@ const verifyTokenWithRBAC = async (req, res, next) => {
   }
 };
 
-// Check if user has specific permission
+// Helper function to check if user is super admin
+const isUserSuperAdmin = (user) => {
+  if (!user) return false;
+  
+  // Check by role name
+  if (user.role && user.role.name === 'super_admin') {
+    return true;
+  }
+  
+  // Check by roleId in profile
+  if (user.profile && user.profile.roleId === 'super_admin') {
+    return true;
+  }
+  
+  // Check if user has super admin permissions (all permissions)
+  if (user.permissions && Array.isArray(user.permissions)) {
+    // Super admin typically has a very large number of permissions
+    // or has specific super admin permissions
+    const superAdminPermissions = user.permissions.filter(p => 
+      p.includes('super_admin') || p.includes(':all')
+    );
+    if (superAdminPermissions.length > 10) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
+// Check if user has specific permission (with hierarchical support)
 const hasPermission = (userPermissions, requiredPermission) => {
   if (!userPermissions || !Array.isArray(userPermissions)) {
     return false;
   }
   
-  return userPermissions.includes(requiredPermission);
+  // Direct match
+  if (userPermissions.includes(requiredPermission)) {
+    return true;
+  }
+  
+  // Check for hierarchical permissions (e.g., properties:read:all covers properties:read:organization)
+  const parts = requiredPermission.split(':');
+  if (parts.length >= 2) {
+    // Check for :all permission at the same resource level (e.g., properties:read:all)
+    const allPermission = `${parts[0]}:${parts[1]}:all`;
+    if (userPermissions.includes(allPermission)) {
+      return true;
+    }
+  }
+  
+  return false;
 };
 
 // Check if user has any of the required permissions
@@ -93,7 +216,7 @@ const hasAnyPermission = (userPermissions, requiredPermissions) => {
     return false;
   }
   
-  return requiredPermissions.some(permission => userPermissions.includes(permission));
+  return requiredPermissions.some(permission => hasPermission(userPermissions, permission));
 };
 
 // Permission checking middleware
@@ -103,15 +226,37 @@ const requirePermission = (permission) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
     
-    if (!req.user.organizationId && !permission.includes('super_admin')) {
-      return res.status(403).json({ error: 'User not assigned to organization' });
+    // Super admins can bypass organization requirement
+    const isSuperAdmin = isUserSuperAdmin(req.user);
+    
+    // Check organizationId from multiple possible locations
+    const organizationId = req.user.organizationId || req.user.profile?.organizationId || null;
+    
+    if (!organizationId && !isSuperAdmin) {
+      return res.status(403).json({ 
+        error: 'Organization membership required',
+        message: 'User not assigned to organization. Please contact your administrator to be added to an organization.',
+        code: 'NO_ORGANIZATION'
+      });
+    }
+    
+    // Update req.user.organizationId if it was found in profile
+    if (!req.user.organizationId && organizationId) {
+      req.user.organizationId = organizationId;
+    }
+    
+    // Super admins have all permissions, skip permission check
+    if (isSuperAdmin) {
+      return next();
     }
     
     if (!hasPermission(req.user.permissions, permission)) {
       return res.status(403).json({ 
         error: 'Insufficient permissions',
+        message: `You do not have the required permission: ${permission}`,
         required: permission,
-        userPermissions: req.user.permissions 
+        userPermissions: req.user.permissions,
+        code: 'INSUFFICIENT_PERMISSIONS'
       });
     }
     
@@ -126,15 +271,37 @@ const requireAnyPermission = (permissions) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
     
-    if (!req.user.organizationId && !permissions.some(p => p.includes('super_admin'))) {
-      return res.status(403).json({ error: 'User not assigned to organization' });
+    // Super admins can bypass organization requirement
+    const isSuperAdmin = isUserSuperAdmin(req.user);
+    
+    // Check organizationId from multiple possible locations
+    const organizationId = req.user.organizationId || req.user.profile?.organizationId || null;
+    
+    if (!organizationId && !isSuperAdmin) {
+      return res.status(403).json({ 
+        error: 'Organization membership required',
+        message: 'User not assigned to organization. Please contact your administrator to be added to an organization.',
+        code: 'NO_ORGANIZATION'
+      });
+    }
+    
+    // Update req.user.organizationId if it was found in profile
+    if (!req.user.organizationId && organizationId) {
+      req.user.organizationId = organizationId;
+    }
+    
+    // Super admins have all permissions, skip permission check
+    if (isSuperAdmin) {
+      return next();
     }
     
     if (!hasAnyPermission(req.user.permissions, permissions)) {
       return res.status(403).json({ 
         error: 'Insufficient permissions',
+        message: `You do not have any of the required permissions: ${permissions.join(', ')}`,
         required: permissions,
-        userPermissions: req.user.permissions 
+        userPermissions: req.user.permissions,
+        code: 'INSUFFICIENT_PERMISSIONS'
       });
     }
     
@@ -151,8 +318,9 @@ const checkOrganizationAccess = async (req, res, next) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
     
-    // Super admin can access any organization
-    if (hasPermission(req.user.permissions, 'organizations:read:all')) {
+    // Super admin can access any organization (check by role first, then permission)
+    const isSuperAdmin = isUserSuperAdmin(req.user);
+    if (isSuperAdmin || hasPermission(req.user.permissions, 'organizations:read:all')) {
       return next();
     }
     
@@ -201,13 +369,31 @@ const checkPropertyAccess = async (req, res, next) => {
       return next();
     }
     
-    // Property manager or caretaker can access assigned properties
+    // Property manager or caretaker
     if (hasPermission(req.user.permissions, 'properties:read:assigned')) {
+      // Check organization match first
+      if (property.organizationId !== req.user.organizationId) {
+        return res.status(403).json({ error: 'Access denied to this property' });
+      }
+      
+      // For READ operations: can view all organization properties
+      const method = req.method;
+      const isReadOperation = method === 'GET';
+      
+      if (isReadOperation) {
+        req.property = property;
+        return next();
+      }
+      
+      // For WRITE operations (PUT, DELETE): can only manage assigned properties
       const isAssigned = property.assignedManagers?.includes(req.user.uid) || 
                         property.caretakerId === req.user.uid;
       
       if (!isAssigned) {
-        return res.status(403).json({ error: 'Property not assigned to you' });
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: 'You can only manage properties assigned to you. You can view all organization properties, but modifications are restricted to your assigned properties.'
+        });
       }
       
       req.property = property;
@@ -231,6 +417,8 @@ const checkPropertyAccess = async (req, res, next) => {
 };
 
 // Filter properties based on user permissions and scope
+// NOTE: For property managers, this returns ALL organization properties for READ access
+// Write access (create/update/delete) is still restricted to assigned properties via checkPropertyAccess
 const filterPropertiesByAccess = async (userId, organizationId, permissions) => {
   const db = admin.firestore();
   
@@ -246,25 +434,13 @@ const filterPropertiesByAccess = async (userId, organizationId, permissions) => 
       .get();
   }
   
-  // Property manager/caretaker sees only assigned properties
+  // Property manager/caretaker can VIEW all properties in their organization
+  // But can only MANAGE (create/update/delete) assigned properties
   if (hasPermission(permissions, 'properties:read:assigned')) {
-    const assignedAsManager = await db.collection('properties')
+    // Return all organization properties for viewing
+    return await db.collection('properties')
       .where('organizationId', '==', organizationId)
-      .where('assignedManagers', 'array-contains', userId)
       .get();
-    
-    const assignedAsCaretaker = await db.collection('properties')
-      .where('organizationId', '==', organizationId)
-      .where('caretakerId', '==', userId)
-      .get();
-    
-    // Combine results
-    const allDocs = [...assignedAsManager.docs, ...assignedAsCaretaker.docs];
-    const uniqueDocs = allDocs.filter((doc, index, self) => 
-      index === self.findIndex(d => d.id === doc.id)
-    );
-    
-    return { docs: uniqueDocs };
   }
   
   // Tenant sees only their rental properties (simplified - would check rental records)
@@ -295,7 +471,7 @@ const isSuperAdmin = (req, res, next) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
   
-  if (!req.user.role || req.user.role.name !== 'super_admin') {
+  if (!isUserSuperAdmin(req.user)) {
     return res.status(403).json({ error: 'Super administrator access required' });
   }
   
@@ -308,11 +484,47 @@ const requireOrganization = (req, res, next) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
   
-  if (!req.user.organizationId) {
+  // Super admins can bypass organization requirement
+  const isSuperAdmin = isUserSuperAdmin(req.user);
+  
+  // Check organizationId from multiple possible locations
+  const organizationId = req.user.organizationId || req.user.profile?.organizationId || null;
+  
+  console.log('🔍 requireOrganization check:', {
+    uid: req.user.uid,
+    email: req.user.email,
+    organizationId: organizationId,
+    reqUserOrganizationId: req.user.organizationId,
+    profileOrganizationId: req.user.profile?.organizationId,
+    isSuperAdmin: isSuperAdmin,
+    hasRole: !!req.user.role
+  });
+  
+  if (!organizationId && !isSuperAdmin) {
+    console.error('❌ Organization check failed:', {
+      uid: req.user.uid,
+      email: req.user.email,
+      organizationId: organizationId,
+      profile: req.user.profile
+    });
     return res.status(403).json({ 
       error: 'Organization membership required',
-      message: 'Contact your administrator to be added to an organization'
+      message: 'User not assigned to organization. Please contact your administrator to be added to an organization.',
+      code: 'NO_ORGANIZATION',
+      debug: {
+        uid: req.user.uid,
+        email: req.user.email,
+        organizationId: organizationId,
+        hasRole: !!req.user.role,
+        hasPermissions: (req.user.permissions || []).length > 0,
+        profileOrganizationId: req.user.profile?.organizationId
+      }
     });
+  }
+  
+  // Update req.user.organizationId if it was found in profile
+  if (!req.user.organizationId && organizationId) {
+    req.user.organizationId = organizationId;
   }
   
   next();

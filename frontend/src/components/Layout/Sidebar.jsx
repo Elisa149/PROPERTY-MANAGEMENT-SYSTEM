@@ -26,11 +26,27 @@ import {
   ManageAccounts,
   Analytics,
   Visibility,
+  Business,
+  Settings,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 
 const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRole, isAdmin, userPermissions) => {
   const items = [];
+  const roleName = userRole?.name;
+  const hasPermissions = userPermissions && userPermissions.length > 0;
+
+  // Helper function to check access with role fallback
+  const checkAccessWithFallback = (permissionArray, allowedRoles = []) => {
+    if (hasPermissions) {
+      return hasAnyPermission(permissionArray);
+    }
+    // If no permissions but has role, use role-based fallback
+    if (roleName && allowedRoles.length > 0) {
+      return allowedRoles.includes(roleName);
+    }
+    return false;
+  };
 
   // Dashboard - everyone can see
   items.push({
@@ -41,14 +57,10 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
   });
 
   // Properties - based on role and permissions
-  const hasPropertiesAccess = hasAnyPermission(['properties:read:organization', 'properties:read:assigned']);
-  console.log('🏠 Properties access check:', {
-    hasPropertiesAccess,
-    permissions: ['properties:read:organization', 'properties:read:assigned'],
-    userPermissions
-  });
-  
-  if (hasPropertiesAccess) {
+  if (checkAccessWithFallback(
+    ['properties:read:organization', 'properties:read:assigned'],
+    ['org_admin', 'property_manager', 'financial_viewer', 'super_admin']
+  )) {
     items.push({
       text: 'Properties',
       icon: <Home />,
@@ -59,7 +71,10 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
   }
 
   // Properties Overview - enhanced view for admins and property managers
-  if (hasAnyPermission(['properties:read:organization', 'properties:read:assigned', 'reports:read:organization'])) {
+  if (checkAccessWithFallback(
+    ['properties:read:organization', 'properties:read:assigned', 'reports:read:organization'],
+    ['org_admin', 'property_manager', 'financial_viewer', 'super_admin']
+  )) {
     items.push({
       text: 'Properties Overview', 
       icon: <Assessment />,
@@ -69,8 +84,11 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
     });
   }
 
-  // All Spaces - property managers and above
-  if (hasAnyPermission(['properties:read:organization', 'properties:read:assigned'])) {
+  // All Spaces - property managers and above (anyone who can read properties)
+  if (checkAccessWithFallback(
+    ['properties:read:organization', 'properties:read:assigned'],
+    ['org_admin', 'property_manager', 'super_admin']
+  )) {
     items.push({
       text: 'All Spaces',
       icon: <AccountCircle />,
@@ -81,9 +99,12 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
   }
 
   // Tenants - based on tenant management permissions
-  if (hasAnyPermission(['tenants:read:organization', 'tenants:read:assigned'])) {
+  if (checkAccessWithFallback(
+    ['tenants:read:organization', 'tenants:read:assigned'],
+    ['org_admin', 'property_manager', 'super_admin']
+  )) {
     items.push({
-      text: 'All Tenants',
+      text: 'Tenants',
       icon: <People />,
       path: '/app/tenants',
       subtitle: 'Tenant details & payments',
@@ -91,25 +112,29 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
     });
   }
 
-  // Rent Management - property managers and above
-  if (hasAnyPermission(['payments:create:organization', 'payments:create:assigned', 'properties:read:assigned'])) {
+  // Rent Management - property managers and above (anyone who can read payments or properties)
+  if (checkAccessWithFallback([
+    'payments:create:organization', 
+    'payments:create:assigned', 
+    'payments:read:organization',
+    'payments:read:assigned',
+    'properties:read:assigned',
+    'properties:read:organization'
+  ], ['org_admin', 'property_manager', 'super_admin'])) {
     items.push({
       text: 'Rent Management',
       icon: <Receipt />,
       path: '/app/rent',
+      subtitle: 'Manage rent agreements',
       show: true,
     });
   }
 
   // Payments - based on payment access (including financial viewers)
-  const hasPaymentsAccess = hasAnyPermission(['payments:read:organization', 'payments:read:assigned']);
-  console.log('💰 Payments access check:', {
-    hasPaymentsAccess,
-    permissions: ['payments:read:organization', 'payments:read:assigned'],
-    userPermissions
-  });
-  
-  if (hasPaymentsAccess) {
+  if (checkAccessWithFallback(
+    ['payments:read:organization', 'payments:read:assigned'],
+    ['org_admin', 'property_manager', 'financial_viewer', 'super_admin']
+  )) {
     items.push({
       text: 'Payments',
       icon: <Payment />,
@@ -120,18 +145,25 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
   }
 
   // Financial Analytics - for financial viewers and admins
-  if (hasAnyPermission(['reports:read:organization'])) {
+  // Note: This is the organization-level analytics page
+  if (checkAccessWithFallback(
+    ['reports:read:organization'],
+    ['org_admin', 'financial_viewer', 'super_admin']
+  )) {
     items.push({
-      text: 'Financial Analytics',
+      text: 'Analytics & Reports',
       icon: <Analytics />,
-      path: '/app/analytics',
+      path: '/app/admin/analytics',
       subtitle: 'Financial reports & insights',
       show: true,
     });
   }
 
   // User Management - org admins and super admins only
-  if (hasAnyPermission(['users:read:organization'])) {
+  if (checkAccessWithFallback(
+    ['users:read:organization'],
+    ['org_admin', 'super_admin']
+  ) || (roleName === 'org_admin' || roleName === 'super_admin')) {
     items.push({
       text: 'User Management',
       icon: <ManageAccounts />,
@@ -142,7 +174,7 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
   }
 
   // Admin Dashboard - org admins and super admins only
-  if (isAdmin()) {
+  if (isAdmin() || roleName === 'org_admin' || roleName === 'super_admin') {
     items.push({
       text: 'Admin Dashboard',
       icon: <AdminPanelSettings />,
@@ -153,7 +185,7 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
   }
 
   // Organization Settings - org admins and super admins only
-  if (isAdmin()) {
+  if (isAdmin() || roleName === 'org_admin' || roleName === 'super_admin') {
     items.push({
       text: 'Organization Settings',
       icon: <SupervisorAccount />,
@@ -164,7 +196,7 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
   }
 
   // Property Assignments - org admins and super admins only
-  if (isAdmin()) {
+  if (isAdmin() || roleName === 'org_admin' || roleName === 'super_admin') {
     items.push({
       text: 'Property Assignments',
       icon: <ManageAccounts />,
@@ -177,10 +209,45 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
          // System Administration - super admins only
          if (hasRole('super_admin')) {
            items.push({
-             text: 'System Admin',
+             text: 'System Dashboard',
              icon: <AdminPanelSettings />,
-             path: '/app/admin',
-             subtitle: 'System-wide management',
+             path: '/app/admin/system',
+             subtitle: 'System-wide overview',
+             show: true,
+           });
+           items.push({
+             text: 'Organizations',
+             icon: <Business />,
+             path: '/app/admin/organizations',
+             subtitle: 'Manage all organizations',
+             show: true,
+           });
+           items.push({
+             text: 'Global Users',
+             icon: <People />,
+             path: '/app/admin/users',
+             subtitle: 'Manage users across all orgs',
+             show: true,
+           });
+           items.push({
+             text: 'Global Analytics',
+             icon: <Assessment />,
+             path: '/app/admin/global-analytics',
+             subtitle: 'Cross-organization analytics',
+             show: true,
+           });
+           items.push({
+             text: 'System Settings',
+             icon: <Settings />,
+             path: '/app/admin/system-settings',
+             subtitle: 'System-wide configuration',
+             show: true,
+           });
+           items.push({
+             text: 'Global Rent Records',
+             icon: <Home />,
+             path: '/app/admin/rent',
+             subtitle: 'All rent records by organization',
              show: true,
            });
          }
@@ -218,12 +285,14 @@ const Sidebar = ({ onItemClick }) => {
       hasUserRole: !!userRole,
       hasPermissions: !!userPermissions,
       permissionsLength: userPermissions?.length || 0,
-      roleName: userRole?.name
+      roleName: userRole?.name,
+      permissions: userPermissions
     });
     
     // Safety check: if role data isn't loaded yet, show at least dashboard
-    if (!userRole || !userPermissions) {
-      console.log('⚠️ Missing role or permissions, showing dashboard only');
+    // Allow empty permissions array if user has a role (permissions might be in role document)
+    if (!userRole) {
+      console.log('⚠️ Missing role, showing dashboard only');
       return [{
         text: 'Dashboard',
         icon: <Dashboard />,
@@ -232,7 +301,15 @@ const Sidebar = ({ onItemClick }) => {
       }];
     }
     
-    const items = getAllNavigationItems(userRole, hasPermission, hasAnyPermission, hasRole, isAdmin, userPermissions);
+    // If user has role but no permissions, still show pages based on role name
+    const items = getAllNavigationItems(
+      userRole, 
+      hasPermission, 
+      hasAnyPermission, 
+      hasRole, 
+      isAdmin, 
+      userPermissions || []
+    );
     console.log('📋 Generated navigation items:', items.map(item => ({ text: item.text, show: item.show })));
     return items;
   }, [userRole, userPermissions, hasPermission, hasAnyPermission, hasRole, isAdmin]);
