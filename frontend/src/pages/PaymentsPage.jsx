@@ -55,6 +55,8 @@ import { paymentsAPI, propertiesAPI, invoicesAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import PaymentReceipt from '../components/PaymentReceipt';
+import AnimatedProgressBar from '../components/common/AnimatedProgressBar';
+import AnimatedCounter from '../components/common/AnimatedCounter';
 
 // Helper functions
 const formatCurrency = (amount) => {
@@ -305,7 +307,16 @@ const PaymentsPage = () => {
       {/* Statistics Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <MonetizationOn sx={{ color: 'success.main', mr: 1 }} />
@@ -313,9 +324,13 @@ const PaymentsPage = () => {
                   Total Collected
                 </Typography>
               </Box>
-              <Typography variant="h4" color="success.main">
-                {formatCurrency(stats.total)}
-              </Typography>
+              <AnimatedCounter
+                value={stats.total}
+                formatCurrency={formatCurrency}
+                variant="h4"
+                color="success.main"
+                sx={{ fontWeight: 'bold' }}
+              />
               <Typography variant="body2" color="text.secondary">
                 From {stats.count} payments
               </Typography>
@@ -324,7 +339,16 @@ const PaymentsPage = () => {
         </Grid>
 
         <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Receipt sx={{ color: 'primary.main', mr: 1 }} />
@@ -332,18 +356,38 @@ const PaymentsPage = () => {
                   Invoice Payments
                 </Typography>
               </Box>
-              <Typography variant="h4" color="primary.main">
-                {formatCurrency(stats.invoicePaymentsAmount)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {stats.invoicePayments} payments on invoices
-              </Typography>
+              <AnimatedCounter
+                value={stats.invoicePaymentsAmount}
+                formatCurrency={formatCurrency}
+                variant="h4"
+                color="primary.main"
+                sx={{ fontWeight: 'bold' }}
+              />
+              <Box sx={{ mt: 2 }}>
+                <AnimatedProgressBar
+                  value={stats.invoicePayments}
+                  total={stats.count || 1}
+                  label="Invoice Coverage"
+                  color="primary"
+                  height={8}
+                  variant="default"
+                />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
 
         <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <TrendingUp sx={{ color: 'info.main', mr: 1 }} />
@@ -351,18 +395,38 @@ const PaymentsPage = () => {
                   Late Fees
                 </Typography>
               </Box>
-              <Typography variant="h4" color="info.main">
-                {formatCurrency(stats.totalFees)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Additional charges
-              </Typography>
+              <AnimatedCounter
+                value={stats.totalFees}
+                formatCurrency={formatCurrency}
+                variant="h4"
+                color="info.main"
+                sx={{ fontWeight: 'bold' }}
+              />
+              <Box sx={{ mt: 2 }}>
+                <AnimatedProgressBar
+                  value={stats.totalFees}
+                  total={stats.total || 1}
+                  label="Fee Ratio"
+                  color="info"
+                  height={8}
+                  variant="default"
+                />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
 
         <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <CheckCircle sx={{ color: 'success.main', mr: 1 }} />
@@ -370,18 +434,37 @@ const PaymentsPage = () => {
                   Completed
                 </Typography>
               </Box>
-              <Typography variant="h4" color="success.main">
-                {stats.completed}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Successful payments
-              </Typography>
+              <AnimatedCounter
+                value={stats.completed}
+                variant="h4"
+                color="success.main"
+                sx={{ fontWeight: 'bold' }}
+              />
+              <Box sx={{ mt: 2 }}>
+                <AnimatedProgressBar
+                  value={stats.completed}
+                  total={stats.count || 1}
+                  label="Success Rate"
+                  color="success"
+                  height={8}
+                  variant="default"
+                />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
 
         <Grid item xs={12} sm={6} md={2.4}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Warning sx={{ color: 'warning.main', mr: 1 }} />
@@ -389,12 +472,22 @@ const PaymentsPage = () => {
                   Pending
                 </Typography>
               </Box>
-              <Typography variant="h4" color="warning.main">
-                {stats.pending}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Awaiting confirmation
-              </Typography>
+              <AnimatedCounter
+                value={stats.pending}
+                variant="h4"
+                color="warning.main"
+                sx={{ fontWeight: 'bold' }}
+              />
+              <Box sx={{ mt: 2 }}>
+                <AnimatedProgressBar
+                  value={stats.pending}
+                  total={stats.count || 1}
+                  label="Pending Rate"
+                  color="warning"
+                  height={8}
+                  variant="default"
+                />
+              </Box>
             </CardContent>
           </Card>
         </Grid>

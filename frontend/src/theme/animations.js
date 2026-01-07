@@ -108,6 +108,46 @@ export const keyframes = {
       }
     }
   `,
+
+  // Count up animation
+  countUp: `
+    @keyframes countUp {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  `,
+
+  // Progress fill animation
+  progressFill: `
+    @keyframes progressFill {
+      from {
+        transform: scaleX(0);
+        transform-origin: left;
+      }
+      to {
+        transform: scaleX(1);
+        transform-origin: left;
+      }
+    }
+  `,
+
+  // Glow pulse animation
+  glowPulse: `
+    @keyframes glowPulse {
+      0%, 100% {
+        box-shadow: 0 0 5px rgba(25, 118, 210, 0.5);
+      }
+      50% {
+        box-shadow: 0 0 20px rgba(25, 118, 210, 0.8);
+      }
+    }
+  `,
 };
 
 // Animation styles that can be applied to components

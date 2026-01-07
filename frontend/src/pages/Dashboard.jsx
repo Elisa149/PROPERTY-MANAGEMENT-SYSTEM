@@ -31,6 +31,8 @@ import { paymentsAPI, propertiesAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import PropertySelectorDialog from '../components/PropertySelectorDialog';
+import AnimatedProgressBar from '../components/common/AnimatedProgressBar';
+import AnimatedCounter from '../components/common/AnimatedCounter';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -113,12 +115,25 @@ const Dashboard = () => {
   // Show warning if using fallback data
   const usingFallbackData = !!summaryError;
 
+  const formatCurrency = (amount) => {
+    try {
+      return new Intl.NumberFormat('en-UG', {
+        style: 'currency',
+        currency: 'UGX',
+        minimumFractionDigits: 0,
+      }).format(amount || 0);
+    } catch (error) {
+      return `UGX ${(amount || 0).toLocaleString()}`;
+    }
+  };
+
   const stats = [
     {
       title: 'Total Properties',
       value: dashboardData.totalProperties || 0,
       icon: <Home />,
       color: 'primary',
+      animated: true,
     },
     {
       title: 'Total Spaces',
@@ -126,20 +141,23 @@ const Dashboard = () => {
       subtitle: 'Rentable units',
       icon: <Person />,
       color: 'info',
+      animated: true,
     },
     {
       title: 'This Month Collected',
-      value: `UGX ${dashboardData.thisMonth?.collected?.toLocaleString() || '0'}`,
+      value: dashboardData.thisMonth?.collected || 0,
       subtitle: `${dashboardData.thisMonth?.payments || 0} payments`,
       icon: <AttachMoney />,
       color: 'success',
+      isCurrency: true,
     },
     {
       title: 'Monthly Potential',
-      value: `UGX ${dashboardData.thisMonth?.expected?.toLocaleString() || '0'}`,
+      value: dashboardData.thisMonth?.expected || 0,
       subtitle: `${dashboardData.thisMonth?.collectionRate || 0}% collected`,
       icon: <TrendingUp />,
       color: (dashboardData.thisMonth?.collectionRate || 0) >= 80 ? 'success' : 'warning',
+      isCurrency: true,
     },
   ];
 
@@ -191,7 +209,16 @@ const Dashboard = () => {
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {stats.map((stat, index) => (
           <Grid item xs={12} sm={6} md={3} key={index}>
-            <Card>
+            <Card
+              sx={{
+                height: '100%',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+                },
+              }}
+            >
               <CardContent>
                 <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                   <Box
@@ -209,9 +236,26 @@ const Dashboard = () => {
                     {stat.title}
                   </Typography>
                 </Box>
-                <Typography variant="h4" component="div" fontWeight="bold">
-                  {stat.value}
-                </Typography>
+                {stat.isCurrency ? (
+                  <AnimatedCounter
+                    value={stat.value}
+                    formatCurrency={formatCurrency}
+                    variant="h4"
+                    color={`${stat.color}.main`}
+                    sx={{ fontWeight: 'bold' }}
+                  />
+                ) : stat.animated ? (
+                  <AnimatedCounter
+                    value={stat.value}
+                    variant="h4"
+                    color={`${stat.color}.main`}
+                    sx={{ fontWeight: 'bold' }}
+                  />
+                ) : (
+                  <Typography variant="h4" component="div" fontWeight="bold">
+                    {stat.value}
+                  </Typography>
+                )}
                 {stat.subtitle && (
                   <Typography variant="body2" color="text.secondary">
                     {stat.subtitle}
@@ -226,72 +270,91 @@ const Dashboard = () => {
       <Grid container spacing={3}>
         {/* Collection Rate Progress */}
         <Grid item xs={12} md={6}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Monthly Collection Progress
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                💰 Monthly Collection Progress
               </Typography>
-              <Box sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body2">
-                    ${dashboardData.thisMonth?.collected?.toLocaleString() || '0'} collected
-                  </Typography>
-                  <Typography variant="body2">
-                    ${dashboardData.thisMonth?.expected?.toLocaleString() || '0'} expected
-                  </Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={Math.min(dashboardData.thisMonth?.collectionRate || 0, 100)}
-                  color={getCollectionRateColor(dashboardData.thisMonth?.collectionRate || 0)}
-                  sx={{ height: 8, borderRadius: 4 }}
-                />
-              </Box>
-              <Typography variant="body2" color="text.secondary">
-                {dashboardData.thisMonth?.collectionRate || 0}% of expected rent collected this month
-              </Typography>
+              <AnimatedProgressBar
+                value={dashboardData.thisMonth?.collected || 0}
+                total={dashboardData.thisMonth?.expected || 1}
+                label="Collection Rate"
+                showAmount={true}
+                formatCurrency={formatCurrency}
+                color="auto"
+                height={16}
+                animationDuration={2000}
+                variant="default"
+              />
             </CardContent>
           </Card>
         </Grid>
 
         {/* Month Comparison */}
         <Grid item xs={12} md={6}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Month Comparison
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                📊 Month Comparison
               </Typography>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
                 <Box>
-                  <Typography variant="body2" color="text.secondary">
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
                     This Month
                   </Typography>
-                  <Typography variant="h6">
-                    ${dashboardData.thisMonth?.collected?.toLocaleString() || '0'}
-                  </Typography>
+                  <AnimatedCounter
+                    value={dashboardData.thisMonth?.collected || 0}
+                    formatCurrency={formatCurrency}
+                    variant="h5"
+                    color="success.main"
+                    sx={{ fontWeight: 'bold' }}
+                  />
                 </Box>
-                <Box>
-                  <Typography variant="body2" color="text.secondary">
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
                     Last Month
                   </Typography>
-                  <Typography variant="h6">
-                    ${dashboardData.lastMonth?.collected?.toLocaleString() || '0'}
-                  </Typography>
+                  <AnimatedCounter
+                    value={dashboardData.lastMonth?.collected || 0}
+                    formatCurrency={formatCurrency}
+                    variant="h5"
+                    color="info.main"
+                    sx={{ fontWeight: 'bold' }}
+                  />
                 </Box>
               </Box>
               {dashboardData.thisMonth?.collected !== undefined && dashboardData.lastMonth?.collected !== undefined && (
                 <Box>
                   {dashboardData.thisMonth.collected >= dashboardData.lastMonth.collected ? (
                     <Chip
-                      label={`+$${(dashboardData.thisMonth.collected - dashboardData.lastMonth.collected).toLocaleString()} vs last month`}
+                      label={`+${formatCurrency(dashboardData.thisMonth.collected - dashboardData.lastMonth.collected)} vs last month`}
                       color="success"
                       size="small"
+                      icon={<TrendingUp />}
+                      sx={{ fontWeight: 'medium' }}
                     />
                   ) : (
                     <Chip
-                      label={`-$${(dashboardData.lastMonth.collected - dashboardData.thisMonth.collected).toLocaleString()} vs last month`}
+                      label={`-${formatCurrency(dashboardData.lastMonth.collected - dashboardData.thisMonth.collected)} vs last month`}
                       color="error"
                       size="small"
+                      sx={{ fontWeight: 'medium' }}
                     />
                   )}
                 </Box>

@@ -58,6 +58,8 @@ import toast from 'react-hot-toast';
 import { invoicesAPI, paymentsAPI, rentAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import PaymentReceipt from '../components/PaymentReceipt';
+import AnimatedProgressBar from '../components/common/AnimatedProgressBar';
+import AnimatedCounter from '../components/common/AnimatedCounter';
 
 // Helper functions
 const formatCurrency = (amount) => {
@@ -257,7 +259,16 @@ const InvoicesPage = () => {
       {/* Statistics Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Receipt sx={{ color: 'primary.main', mr: 1 }} />
@@ -265,15 +276,27 @@ const InvoicesPage = () => {
                   Total Invoices
                 </Typography>
               </Box>
-              <Typography variant="h4" color="primary.main">
-                {stats.totalInvoices}
-              </Typography>
+              <AnimatedCounter
+                value={stats.totalInvoices}
+                variant="h4"
+                color="primary.main"
+                sx={{ fontWeight: 'bold' }}
+              />
             </CardContent>
           </Card>
         </Grid>
 
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <MonetizationOn sx={{ color: 'success.main', mr: 1 }} />
@@ -281,15 +304,28 @@ const InvoicesPage = () => {
                   Total Amount
                 </Typography>
               </Box>
-              <Typography variant="h4" color="success.main">
-                {formatCurrency(stats.totalAmount)}
-              </Typography>
+              <AnimatedCounter
+                value={stats.totalAmount}
+                formatCurrency={formatCurrency}
+                variant="h4"
+                color="success.main"
+                sx={{ fontWeight: 'bold' }}
+              />
             </CardContent>
           </Card>
         </Grid>
 
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <CheckCircle sx={{ color: 'info.main', mr: 1 }} />
@@ -297,15 +333,38 @@ const InvoicesPage = () => {
                   Total Paid
                 </Typography>
               </Box>
-              <Typography variant="h4" color="info.main">
-                {formatCurrency(stats.totalPaid)}
-              </Typography>
+              <AnimatedCounter
+                value={stats.totalPaid}
+                formatCurrency={formatCurrency}
+                variant="h4"
+                color="info.main"
+                sx={{ fontWeight: 'bold' }}
+              />
+              <Box sx={{ mt: 2 }}>
+                <AnimatedProgressBar
+                  value={stats.totalPaid}
+                  total={stats.totalAmount || 1}
+                  label="Payment Progress"
+                  color="auto"
+                  height={10}
+                  variant="default"
+                />
+              </Box>
             </CardContent>
           </Card>
         </Grid>
 
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
+          <Card
+            sx={{
+              height: '100%',
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+              },
+            }}
+          >
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Warning sx={{ color: 'error.main', mr: 1 }} />
@@ -313,9 +372,81 @@ const InvoicesPage = () => {
                   Overdue
                 </Typography>
               </Box>
-              <Typography variant="h4" color="error.main">
-                {stats.totalOverdue}
+              <AnimatedCounter
+                value={stats.totalOverdue}
+                variant="h4"
+                color="error.main"
+                sx={{ fontWeight: 'bold' }}
+              />
+              <Box sx={{ mt: 2 }}>
+                <AnimatedProgressBar
+                  value={stats.totalOverdue}
+                  total={stats.totalInvoices || 1}
+                  label="Overdue Rate"
+                  color="error"
+                  height={10}
+                  variant="default"
+                />
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Payment Collection Progress - Detailed View */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} md={6}>
+          <AnimatedProgressBar
+            value={stats.totalPaid}
+            total={stats.totalAmount || 1}
+            label="Overall Payment Collection"
+            showAmount={true}
+            formatCurrency={formatCurrency}
+            color="auto"
+            height={16}
+            animationDuration={2000}
+            variant="detailed"
+          />
+        </Grid>
+        <Grid item xs={12} md={6}>
+          <Card
+            sx={{
+              height: '100%',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+            }}
+          >
+            <CardContent>
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
+                💎 Collection Insights
               </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                <Box>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    Remaining Balance
+                  </Typography>
+                  <Typography variant="h5" fontWeight="bold">
+                    {formatCurrency((stats.totalAmount || 0) - (stats.totalPaid || 0))}
+                  </Typography>
+                </Box>
+                <Box sx={{ textAlign: 'right' }}>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    Collection Rate
+                  </Typography>
+                  <Typography variant="h5" fontWeight="bold">
+                    {stats.totalAmount > 0 
+                      ? Math.round((stats.totalPaid / stats.totalAmount) * 100)
+                      : 0}%
+                  </Typography>
+                </Box>
+              </Box>
+              <Box sx={{ mt: 3 }}>
+                <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                  {stats.totalOverdue > 0 
+                    ? `⚠️ ${stats.totalOverdue} invoice${stats.totalOverdue > 1 ? 's' : ''} overdue`
+                    : '✅ All invoices are up to date'}
+                </Typography>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
