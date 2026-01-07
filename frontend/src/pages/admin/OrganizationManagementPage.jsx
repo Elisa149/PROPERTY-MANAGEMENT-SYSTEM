@@ -641,8 +641,9 @@ const OrganizationManagementPage = () => {
               sx={{ mb: 2 }}
             />
             <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Status</InputLabel>
+              <InputLabel htmlFor="org-status-create">Status</InputLabel>
               <Select
+                id="org-status-create"
                 value={formData.status}
                 label="Status"
                 onChange={(e) => setFormData({ ...formData, status: e.target.value })}
@@ -800,8 +801,9 @@ const OrganizationManagementPage = () => {
               sx={{ mb: 2 }}
             />
             <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Status</InputLabel>
+              <InputLabel htmlFor="org-status-edit">Status</InputLabel>
               <Select
+                id="org-status-edit"
                 value={formData.status}
                 label="Status"
                 onChange={(e) => setFormData({ ...formData, status: e.target.value })}
@@ -1138,8 +1140,9 @@ const OrganizationManagementPage = () => {
               Email: {selectedUser?.email}
             </Typography>
             <FormControl fullWidth>
-              <InputLabel>Role</InputLabel>
+              <InputLabel htmlFor="org-assign-role">Role</InputLabel>
               <Select
+                id="org-assign-role"
                 value={selectedRoleId}
                 label="Role"
                 onChange={(e) => setSelectedRoleId(e.target.value)}

@@ -653,6 +653,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id="tenantName"
                   label="Tenant Name *"
                   value={tenantForm.tenantName}
                   onChange={(e) => setTenantForm({ ...tenantForm, tenantName: e.target.value })}
@@ -670,6 +671,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id="tenantPhone"
                   label="Phone Number *"
                   value={tenantForm.tenantPhone}
                   onChange={(e) => setTenantForm({ ...tenantForm, tenantPhone: e.target.value })}
@@ -688,6 +690,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id="tenantEmail"
                   type="email"
                   label="Email Address"
                   value={tenantForm.tenantEmail}
@@ -705,6 +708,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id="nationalId"
                   label="National ID / Passport"
                   value={tenantForm.nationalId}
                   onChange={(e) => setTenantForm({ ...tenantForm, nationalId: e.target.value })}
@@ -715,6 +719,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12}>
                 <TextField
                   fullWidth
+                  id="emergencyContact"
                   label="Emergency Contact"
                   value={tenantForm.emergencyContact}
                   onChange={(e) => setTenantForm({ ...tenantForm, emergencyContact: e.target.value })}
@@ -731,8 +736,9 @@ const SpaceAssignmentPage = () => {
             <Grid container spacing={2}>
               <Grid item xs={12} md={4}>
                 <FormControl fullWidth>
-                  <InputLabel>Lease Period Type</InputLabel>
+                  <InputLabel htmlFor="lease-period-type">Lease Period Type</InputLabel>
                   <Select
+                    id="lease-period-type"
                     value={tenantForm.leasePeriodType}
                     onChange={(e) => handleLeasePeriodChange('leasePeriodType', e.target.value)}
                     label="Lease Period Type"
@@ -748,6 +754,7 @@ const SpaceAssignmentPage = () => {
                 <Grid item xs={12} md={4}>
                   <TextField
                     fullWidth
+                    id="leaseDuration"
                     type="number"
                     label={`Duration (${tenantForm.leasePeriodType === 'monthly' ? 'Months' : 'Years'})`}
                     value={tenantForm.leasePeriodType === 'yearly' ? Math.floor(tenantForm.leaseDuration / 12) : tenantForm.leaseDuration}
@@ -771,6 +778,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={tenantForm.leasePeriodType === 'custom' ? 6 : 4}>
                 <TextField
                   fullWidth
+                  id="leaseStart"
                   type="date"
                   label="Lease Start Date *"
                   value={tenantForm.leaseStart}
@@ -783,6 +791,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={tenantForm.leasePeriodType === 'custom' ? 6 : 12}>
                 <TextField
                   fullWidth
+                  id="leaseEnd"
                   type="date"
                   label="Lease End Date (Optional)"
                   value={tenantForm.leaseEnd}
@@ -806,6 +815,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id="monthlyRent"
                   type="number"
                   label="Monthly Rent (UGX)"
                   value={tenantForm.monthlyRent}
@@ -830,6 +840,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id="paymentDueDate"
                   type="number"
                   label="Payment Due Date (Day of Month)"
                   value={tenantForm.paymentDueDate}
@@ -849,8 +860,9 @@ const SpaceAssignmentPage = () => {
             <Grid container spacing={2}>
               <Grid item xs={12} md={6}>
                 <FormControl fullWidth>
-                  <InputLabel>Agreement Type</InputLabel>
+                  <InputLabel htmlFor="agreement-type">Agreement Type</InputLabel>
                   <Select
+                    id="agreement-type"
                     value={tenantForm.agreementType}
                     onChange={(e) => setTenantForm({ ...tenantForm, agreementType: e.target.value })}
                     label="Agreement Type"
@@ -864,6 +876,7 @@ const SpaceAssignmentPage = () => {
               <Grid item xs={12}>
                 <TextField
                   fullWidth
+                  id="notes"
                   multiline
                   rows={3}
                   label="Additional Notes & Terms"

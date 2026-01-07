@@ -152,6 +152,17 @@ export const paymentsAPI = {
   getStats: () => api.get('/payments/stats'),
 };
 
+export const invoicesAPI = {
+  getAll: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return api.get(`/invoices${query ? `?${query}` : ''}`);
+  },
+  getById: (id) => api.get(`/invoices/${id}`),
+  create: (data) => api.post('/invoices', data),
+  update: (id, data) => api.put(`/invoices/${id}`, data),
+  delete: (id) => api.delete(`/invoices/${id}`),
+};
+
 export const tenantsAPI = {
   getAll: () => api.get('/tenants'),
   getById: (id) => api.get(`/tenants/${id}`),

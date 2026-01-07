@@ -568,8 +568,9 @@ const PropertyAssignmentPage = () => {
         <DialogContent>
           <Box sx={{ mt: 1 }}>
             <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Select Property</InputLabel>
+              <InputLabel htmlFor="select-property">Select Property</InputLabel>
               <Select
+                id="select-property"
                 value={selectedProperty}
                 label="Select Property"
                 onChange={(e) => setSelectedProperty(e.target.value)}
@@ -589,8 +590,9 @@ const PropertyAssignmentPage = () => {
             </FormControl>
 
             <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Assignment Type</InputLabel>
+              <InputLabel htmlFor="assignment-type">Assignment Type</InputLabel>
               <Select
+                id="assignment-type"
                 value={assignmentType}
                 label="Assignment Type"
                 onChange={(e) => setAssignmentType(e.target.value)}
@@ -611,8 +613,9 @@ const PropertyAssignmentPage = () => {
             </FormControl>
 
             <FormControl fullWidth>
-              <InputLabel>Select User</InputLabel>
+              <InputLabel htmlFor="select-user">Select User</InputLabel>
               <Select
+                id="select-user"
                 value={selectedUser}
                 label="Select User"
                 onChange={(e) => setSelectedUser(e.target.value)}

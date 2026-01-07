@@ -23,6 +23,7 @@ import AllSpacesPage from './pages/AllSpacesPage';
 import TenantsPage from './pages/TenantsPage';
 import RentPage from './pages/RentPage';
 import PaymentsPage from './pages/PaymentsPage';
+import InvoicesPage from './pages/InvoicesPage';
 import ProfilePage from './pages/ProfilePage';
 import UserManagementPage from './pages/UserManagementPage';
 
@@ -155,6 +156,9 @@ function App() {
 
           {/* Payment Tracking */}
           <Route path="payments" element={<PaymentsPage />} />
+
+          {/* Invoices */}
+          <Route path="invoices" element={<InvoicesPage />} />
 
           {/* Profile */}
           <Route path="profile" element={<ProfilePage />} />

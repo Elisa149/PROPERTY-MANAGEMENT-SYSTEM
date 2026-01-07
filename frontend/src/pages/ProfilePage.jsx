@@ -209,6 +209,7 @@ const ProfilePage = () => {
                 <Grid item xs={12} md={6}>
                   <TextField
                     fullWidth
+                    id="displayName"
                     label="Display Name"
                     name="displayName"
                     value={formData.displayName}
@@ -224,6 +225,7 @@ const ProfilePage = () => {
                 <Grid item xs={12} md={6}>
                   <TextField
                     fullWidth
+                    id="email"
                     label="Email"
                     value={user?.email || ''}
                     disabled
@@ -237,6 +239,7 @@ const ProfilePage = () => {
                 <Grid item xs={12} md={6}>
                   <TextField
                     fullWidth
+                    id="firstName"
                     label="First Name"
                     name="firstName"
                     value={formData.firstName}
@@ -249,6 +252,7 @@ const ProfilePage = () => {
                 <Grid item xs={12} md={6}>
                   <TextField
                     fullWidth
+                    id="lastName"
                     label="Last Name"
                     name="lastName"
                     value={formData.lastName}
@@ -261,6 +265,7 @@ const ProfilePage = () => {
                 <Grid item xs={12} md={6}>
                   <TextField
                     fullWidth
+                    id="phone"
                     label="Phone Number"
                     name="phone"
                     value={formData.phone}
@@ -276,6 +281,7 @@ const ProfilePage = () => {
                 <Grid item xs={12}>
                   <TextField
                     fullWidth
+                    id="address"
                     label="Address"
                     name="address"
                     value={formData.address}

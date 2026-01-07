@@ -179,8 +179,9 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} md={6}>
           <FormControl fullWidth>
-            <InputLabel>Land Use Type</InputLabel>
+            <InputLabel htmlFor="land-use-type">Land Use Type</InputLabel>
             <Select
+              id="land-use-type"
               value={landDetails.landUse || ''}
               onChange={(e) => onLandDetailsChange({ ...landDetails, landUse: e.target.value })}
               label="Land Use Type"
@@ -197,6 +198,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
         <Grid item xs={12} md={6}>
           <TextField
             fullWidth
+            id="totalArea"
             label="Total Land Area (Optional)"
             value={landDetails.totalArea || ''}
             onChange={(e) => onLandDetailsChange({ ...landDetails, totalArea: e.target.value })}
@@ -352,6 +354,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
+                id="squatterName"
                 label="Squatter Name"
                 value={squatterForm.squatterName}
                 onChange={(e) => setSquatterForm({ ...squatterForm, squatterName: e.target.value })}
@@ -369,6 +372,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
+                id="squatterPhone"
                 label="Phone Number (Optional)"
                 value={squatterForm.squatterPhone}
                 onChange={(e) => setSquatterForm({ ...squatterForm, squatterPhone: e.target.value })}
@@ -386,6 +390,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
+                id="assignedArea"
                 label="Assigned Area/Section"
                 value={squatterForm.assignedArea}
                 onChange={(e) => setSquatterForm({ ...squatterForm, assignedArea: e.target.value })}
@@ -403,6 +408,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
+                id="areaSize"
                 label="Area Size (Optional)"
                 value={squatterForm.areaSize}
                 onChange={(e) => setSquatterForm({ ...squatterForm, areaSize: e.target.value })}
@@ -413,6 +419,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
             <Grid item xs={12} md={4}>
               <TextField
                 fullWidth
+                id="monthlyPayment"
                 type="number"
                 label="Monthly Payment"
                 value={squatterForm.monthlyPayment}
@@ -431,6 +438,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
             <Grid item xs={12} md={4}>
               <TextField
                 fullWidth
+                id="agreementDate"
                 type="date"
                 label="Agreement Date"
                 value={squatterForm.agreementDate}
@@ -441,8 +449,9 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
 
             <Grid item xs={12} md={4}>
               <FormControl fullWidth>
-                <InputLabel>Status</InputLabel>
+                <InputLabel htmlFor="squatter-status">Status</InputLabel>
                 <Select
+                  id="squatter-status"
                   value={squatterForm.status}
                   onChange={(e) => setSquatterForm({ ...squatterForm, status: e.target.value })}
                   label="Status"
@@ -459,6 +468,7 @@ const SquatterManagement = ({ landDetails, onLandDetailsChange, errors = {} }) =
             <Grid item xs={12}>
               <TextField
                 fullWidth
+                id="squatterDescription"
                 multiline
                 rows={3}
                 label="Additional Notes"

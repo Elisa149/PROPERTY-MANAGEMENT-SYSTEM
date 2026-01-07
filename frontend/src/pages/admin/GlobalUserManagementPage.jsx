@@ -287,8 +287,9 @@ const GlobalUserManagementPage = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <FormControl fullWidth>
-              <InputLabel>Filter by Organization</InputLabel>
+              <InputLabel htmlFor="filter-org-user">Filter by Organization</InputLabel>
               <Select
+                id="filter-org-user"
                 value={filterOrganization}
                 label="Filter by Organization"
                 onChange={(e) => setFilterOrganization(e.target.value)}
@@ -304,8 +305,9 @@ const GlobalUserManagementPage = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <FormControl fullWidth>
-              <InputLabel>Filter by Status</InputLabel>
+              <InputLabel htmlFor="filter-status-user">Filter by Status</InputLabel>
               <Select
+                id="filter-status-user"
                 value={filterStatus}
                 label="Filter by Status"
                 onChange={(e) => setFilterStatus(e.target.value)}
@@ -432,8 +434,9 @@ const GlobalUserManagementPage = () => {
                 </Box>
 
                 <FormControl fullWidth sx={{ mb: 2 }}>
-                  <InputLabel>Organization</InputLabel>
+                  <InputLabel htmlFor="assign-org">Organization</InputLabel>
                   <Select
+                    id="assign-org"
                     value={selectedOrgId}
                     label="Organization"
                     onChange={(e) => {
@@ -452,8 +455,9 @@ const GlobalUserManagementPage = () => {
 
                 {selectedOrgId && (
                   <FormControl fullWidth>
-                    <InputLabel>Role</InputLabel>
+                    <InputLabel htmlFor="assign-role">Role</InputLabel>
                     <Select
+                      id="assign-role"
                       value={selectedRoleId}
                       label="Role"
                       onChange={(e) => setSelectedRoleId(e.target.value)}

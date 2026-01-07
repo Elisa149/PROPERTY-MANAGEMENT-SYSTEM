@@ -144,6 +144,21 @@ const getAllNavigationItems = (userRole, hasPermission, hasAnyPermission, hasRol
     });
   }
 
+  // Invoices - based on payment access (same permissions as payments)
+  if (checkAccessWithFallback(
+    ['payments:read:organization', 'payments:read:assigned'],
+    ['org_admin', 'property_manager', 'financial_viewer', 'super_admin']
+  )) {
+    items.push({
+      text: 'Invoices',
+      icon: <Receipt />,
+      path: '/app/invoices',
+      subtitle: 'View and manage invoices',
+      show: true,
+      roleInfo: hasPermission('payments:read:organization') ? 'Full Access' : 'Assigned Properties',
+    });
+  }
+
   // Financial Analytics - for financial viewers and admins
   // Note: This is the organization-level analytics page
   if (checkAccessWithFallback(

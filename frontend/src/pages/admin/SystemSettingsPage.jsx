@@ -86,6 +86,7 @@ const SystemSettingsPage = () => {
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
+                  id="systemName"
                   label="System Name"
                   value={settings.systemName}
                   onChange={(e) => setSettings({ ...settings, systemName: e.target.value })}
@@ -94,6 +95,7 @@ const SystemSettingsPage = () => {
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
+                  id="systemVersion"
                   label="System Version"
                   value={settings.systemVersion}
                   onChange={(e) => setSettings({ ...settings, systemVersion: e.target.value })}
@@ -103,6 +105,7 @@ const SystemSettingsPage = () => {
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
+                  id="defaultCurrency"
                   label="Default Currency"
                   value={settings.defaultCurrency}
                   onChange={(e) => setSettings({ ...settings, defaultCurrency: e.target.value })}
@@ -111,6 +114,7 @@ const SystemSettingsPage = () => {
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
+                  id="defaultTimezone"
                   label="Default Timezone"
                   value={settings.defaultTimezone}
                   onChange={(e) => setSettings({ ...settings, defaultTimezone: e.target.value })}

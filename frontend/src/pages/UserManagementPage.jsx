@@ -560,8 +560,9 @@ const UserManagementPage = () => {
               )}
 
               <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>Select Role</InputLabel>
+                <InputLabel htmlFor="select-role">Select Role</InputLabel>
                 <Select
+                  id="select-role"
                   value={selectedRole}
                   label="Select Role"
                   onChange={(e) => setSelectedRole(e.target.value)}
@@ -576,6 +577,7 @@ const UserManagementPage = () => {
 
               <TextField
                 fullWidth
+                id="responseMessage"
                 multiline
                 rows={3}
                 label="Response Message (Optional)"
@@ -649,8 +651,9 @@ const UserManagementPage = () => {
           </Box>
 
           <FormControl fullWidth>
-            <InputLabel>Select New Role</InputLabel>
+            <InputLabel htmlFor="select-new-role">Select New Role</InputLabel>
             <Select
+              id="select-new-role"
               value={newRoleId}
               label="Select New Role"
               onChange={(e) => setNewRoleId(e.target.value)}

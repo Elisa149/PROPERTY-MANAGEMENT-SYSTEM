@@ -282,8 +282,9 @@ const OrganizationSettingsPage = () => {
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <FormControl fullWidth disabled={!editing}>
-                    <InputLabel>Timezone</InputLabel>
+                    <InputLabel htmlFor="org-timezone">Timezone</InputLabel>
                     <Select
+                      id="org-timezone"
                       value={orgSettings.settings?.timezone || 'UTC'}
                       label="Timezone"
                       onChange={(e) => setOrgSettings({
@@ -300,8 +301,9 @@ const OrganizationSettingsPage = () => {
                 </Grid>
                 <Grid item xs={12} md={6}>
                   <FormControl fullWidth disabled={!editing}>
-                    <InputLabel>Currency</InputLabel>
+                    <InputLabel htmlFor="org-currency">Currency</InputLabel>
                     <Select
+                      id="org-currency"
                       value={orgSettings.settings?.currency || 'UGX'}
                       label="Currency"
                       onChange={(e) => setOrgSettings({
@@ -485,8 +487,9 @@ const OrganizationSettingsPage = () => {
               sx={{ mb: 2 }}
             />
             <FormControl fullWidth>
-              <InputLabel>Assign Role</InputLabel>
+              <InputLabel htmlFor="invite-role">Assign Role</InputLabel>
               <Select
+                id="invite-role"
                 value={inviteRole}
                 label="Assign Role"
                 onChange={(e) => setInviteRole(e.target.value)}

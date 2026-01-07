@@ -112,8 +112,9 @@ const AnalyticsPage = () => {
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Time Range</InputLabel>
+            <InputLabel htmlFor="time-range">Time Range</InputLabel>
             <Select
+              id="time-range"
               value={timeRange}
               label="Time Range"
               onChange={(e) => setTimeRange(e.target.value)}
@@ -125,8 +126,9 @@ const AnalyticsPage = () => {
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Report Type</InputLabel>
+            <InputLabel htmlFor="report-type">Report Type</InputLabel>
             <Select
+              id="report-type"
               value={reportType}
               label="Report Type"
               onChange={(e) => setReportType(e.target.value)}

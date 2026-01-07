@@ -27,6 +27,7 @@ if (!admin.apps.length) {
 const propertyRoutes = require('./routes/properties');
 const rentRoutes = require('./routes/rent');
 const paymentRoutes = require('./routes/payments');
+const invoiceRoutes = require('./routes/invoices');
 const authRoutes = require('./routes/auth');
 const tenantRoutes = require('./routes/tenants');
 const organizationsRoutes = require('./routes/organizations');
@@ -70,6 +71,7 @@ app.use('/api/properties', propertyRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/rent', rentRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/invoices', invoiceRoutes);
 app.use('/api/organizations', organizationsRoutes);
 app.use('/api/users', usersRoutes);
 

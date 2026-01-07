@@ -200,6 +200,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="name"
                     label="Property Name"
                     error={!!errors.name}
                     helperText={errors.name?.message}
@@ -216,8 +217,8 @@ const CreatePropertyPage = () => {
                 rules={{ required: 'Property type is required' }}
                 render={({ field }) => (
                   <FormControl fullWidth error={!!errors.type}>
-                    <InputLabel>Property Type</InputLabel>
-                    <Select {...field} label="Property Type">
+                    <InputLabel htmlFor="property-type">Property Type</InputLabel>
+                    <Select {...field} id="property-type" label="Property Type">
                       {propertyTypes.map((type) => (
                         <MenuItem key={type.value} value={type.value}>
                           {type.label}
@@ -243,6 +244,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="establishmentDate"
                     type="date"
                     label="Establishment Date"
                     error={!!errors.establishmentDate}
@@ -260,8 +262,8 @@ const CreatePropertyPage = () => {
                 rules={{ required: 'Ownership type is required' }}
                 render={({ field }) => (
                   <FormControl fullWidth error={!!errors.ownershipType}>
-                    <InputLabel>Ownership Type</InputLabel>
-                    <Select {...field} label="Ownership Type">
+                    <InputLabel htmlFor="ownership-type">Ownership Type</InputLabel>
+                    <Select {...field} id="ownership-type" label="Ownership Type">
                       {ownershipTypes.map((type) => (
                         <MenuItem key={type.value} value={type.value}>
                           {type.label}
@@ -281,6 +283,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="plotNumber"
                     label="Plot Number (Optional)"
                     placeholder="e.g., Plot 123"
                   />
@@ -304,6 +307,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="village"
                     label="Village"
                     error={!!errors.village}
                     helperText={errors.village?.message}
@@ -321,6 +325,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="parish"
                     label="Parish"
                     error={!!errors.parish}
                     helperText={errors.parish?.message}
@@ -338,6 +343,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="subCounty"
                     label="Sub County"
                     error={!!errors.subCounty}
                     helperText={errors.subCounty?.message}
@@ -355,6 +361,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="county"
                     label="County"
                     error={!!errors.county}
                     helperText={errors.county?.message}
@@ -372,6 +379,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="district"
                     label="District"
                     error={!!errors.district}
                     helperText={errors.district?.message}
@@ -388,6 +396,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="landmarks"
                     label="Landmarks (Optional)"
                     placeholder="Near market, next to school"
                   />
@@ -411,6 +420,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="caretakerName"
                     label="Caretaker Name"
                     error={!!errors.caretakerName}
                     helperText={errors.caretakerName?.message}
@@ -435,6 +445,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="caretakerPhone"
                     label="Caretaker Phone"
                     error={!!errors.caretakerPhone}
                     helperText={errors.caretakerPhone?.message}
@@ -469,8 +480,8 @@ const CreatePropertyPage = () => {
                     }}
                     render={({ field }) => (
                       <FormControl fullWidth error={!!errors.buildingType}>
-                        <InputLabel>Building Type</InputLabel>
-                        <Select {...field} label="Building Type">
+                        <InputLabel htmlFor="building-type">Building Type</InputLabel>
+                        <Select {...field} id="building-type" label="Building Type">
                           {buildingTypes.map((type) => (
                             <MenuItem key={type.value} value={type.value}>
                               {type.label}
@@ -524,6 +535,7 @@ const CreatePropertyPage = () => {
                   <TextField
                     {...field}
                     fullWidth
+                    id="description"
                     multiline
                     rows={3}
                     label="Property Description (Optional)"

@@ -543,8 +543,12 @@ router.post('/', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(
 // PUT /api/rent/:id - Update rent record
 router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(['payments:create:organization', 'payments:create:assigned']), async (req, res) => {
   try {
+    console.log('📝 PUT /api/rent/:id - Update request received');
+    console.log('📝 Request body:', JSON.stringify(req.body, null, 2));
+    
     const { error, value } = rentSchema.validate(req.body);
     if (error) {
+      console.error('❌ Validation error:', error.details);
       return res.status(400).json({ error: error.details[0].message });
     }
     
@@ -554,15 +558,22 @@ router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermissio
     const rentId = req.params.id;
     const db = admin.firestore();
     
+    console.log(`📝 Updating rent record ${rentId} for user ${userId} in org ${organizationId}`);
+    
     // Verify rent record exists
     const rentDoc = await db.collection('rent').doc(rentId).get();
     if (!rentDoc.exists) {
+      console.error(`❌ Rent record ${rentId} not found`);
       return res.status(404).json({ error: 'Rent record not found' });
     }
+    
+    const existingRentData = rentDoc.data();
+    console.log('📝 Existing rent data:', JSON.stringify(existingRentData, null, 2));
     
     // Verify property access
     const propertyDoc = await db.collection('properties').doc(value.propertyId).get();
     if (!propertyDoc.exists) {
+      console.error(`❌ Property ${value.propertyId} not found`);
       return res.status(404).json({ error: 'Property not found' });
     }
     
@@ -570,25 +581,145 @@ router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermissio
     
     // Check organization match
     if (property.organizationId !== organizationId) {
+      console.error(`❌ Organization mismatch: property org ${property.organizationId} vs user org ${organizationId}`);
       return res.status(403).json({ error: 'Access denied to this property' });
     }
     
     // Check property-level access for property managers
+    // NOTE: For lease renewal (updating leaseEnd), managers can renew leases for all org properties
+    // For other updates, they can only manage assigned properties
     if (hasPermission(permissions, 'payments:create:assigned') && !hasPermission(permissions, 'payments:create:organization')) {
-      const isAssigned = property.assignedManagers?.includes(userId) || property.caretakerId === userId;
-      if (!isAssigned) {
-        return res.status(403).json({ error: 'Access denied' });
+      // Check if this is a lease renewal (only updating leaseEnd and possibly status)
+      // Handle Firestore Timestamp conversion for existing leaseEnd
+      let existingLeaseEndDate = null;
+      if (existingRentData.leaseEnd) {
+        if (existingRentData.leaseEnd.toDate && typeof existingRentData.leaseEnd.toDate === 'function') {
+          existingLeaseEndDate = existingRentData.leaseEnd.toDate();
+        } else if (existingRentData.leaseEnd instanceof Date) {
+          existingLeaseEndDate = existingRentData.leaseEnd;
+        } else {
+          existingLeaseEndDate = new Date(existingRentData.leaseEnd);
+        }
+      }
+      
+      const newLeaseEndDate = value.leaseEnd ? new Date(value.leaseEnd) : null;
+      
+      // Normalize monthlyRent for comparison (handle Firestore number types and string conversions)
+      const existingMonthlyRent = typeof existingRentData.monthlyRent === 'number' 
+        ? existingRentData.monthlyRent 
+        : parseFloat(existingRentData.monthlyRent) || 0;
+      const newMonthlyRent = typeof value.monthlyRent === 'number' 
+        ? value.monthlyRent 
+        : parseFloat(value.monthlyRent) || 0;
+      
+      // Check if only leaseEnd is being changed (and possibly status to 'active')
+      // Also allow if only status is being changed from terminated/expired to active
+      const leaseEndChanged = newLeaseEndDate && (
+        !existingLeaseEndDate || 
+        newLeaseEndDate.getTime() !== existingLeaseEndDate.getTime()
+      );
+      
+      const isLeaseRenewal = 
+        value.propertyId === existingRentData.propertyId &&
+        value.spaceId === (existingRentData.spaceId || '') &&
+        value.tenantName === existingRentData.tenantName &&
+        Math.abs(newMonthlyRent - existingMonthlyRent) < 0.01 && // Allow small floating point differences
+        leaseEndChanged; // Only leaseEnd is being changed
+      
+      if (isLeaseRenewal) {
+        // Allow lease renewal for all organization properties
+        // Just verify organization match (already done above)
+        console.log(`✅ Lease renewal allowed for manager ${userId} on property ${value.propertyId}`);
+      } else {
+        // For other updates, require assignment
+        const isAssigned = property.assignedManagers?.includes(userId) || property.caretakerId === userId;
+        if (!isAssigned) {
+          console.error(`❌ Access denied: user ${userId} not assigned to property ${value.propertyId}`);
+          console.error(`❌ Renewal check failed - propertyId: ${value.propertyId === existingRentData.propertyId}, spaceId: ${value.spaceId === (existingRentData.spaceId || '')}, tenantName: ${value.tenantName === existingRentData.tenantName}, monthlyRent: ${Math.abs(newMonthlyRent - existingMonthlyRent) < 0.01}`);
+          return res.status(403).json({ 
+            error: 'Access denied',
+            message: 'You can only manage rent records for properties assigned to you. However, you can renew leases for all organization properties.'
+          });
+        }
       }
     }
     
+    // Convert dates to Firestore Timestamps
+    let leaseStartTimestamp;
+    let leaseEndTimestamp;
+    
+    try {
+      // Handle leaseStart - can be Date object, string, or Firestore Timestamp
+      if (value.leaseStart instanceof admin.firestore.Timestamp) {
+        leaseStartTimestamp = value.leaseStart;
+      } else if (value.leaseStart instanceof Date) {
+        leaseStartTimestamp = admin.firestore.Timestamp.fromDate(value.leaseStart);
+      } else if (typeof value.leaseStart === 'string') {
+        const leaseStartDate = new Date(value.leaseStart);
+        if (isNaN(leaseStartDate.getTime())) {
+          throw new Error(`Invalid leaseStart date: ${value.leaseStart}`);
+        }
+        leaseStartTimestamp = admin.firestore.Timestamp.fromDate(leaseStartDate);
+      } else {
+        throw new Error(`Invalid leaseStart format: ${typeof value.leaseStart}`);
+      }
+      
+      // Handle leaseEnd - can be null, Date object, string, or Firestore Timestamp
+      if (!value.leaseEnd || value.leaseEnd === '') {
+        leaseEndTimestamp = null;
+      } else if (value.leaseEnd instanceof admin.firestore.Timestamp) {
+        leaseEndTimestamp = value.leaseEnd;
+      } else if (value.leaseEnd instanceof Date) {
+        leaseEndTimestamp = admin.firestore.Timestamp.fromDate(value.leaseEnd);
+      } else if (typeof value.leaseEnd === 'string') {
+        const leaseEndDate = new Date(value.leaseEnd);
+        if (isNaN(leaseEndDate.getTime())) {
+          throw new Error(`Invalid leaseEnd date: ${value.leaseEnd}`);
+        }
+        leaseEndTimestamp = admin.firestore.Timestamp.fromDate(leaseEndDate);
+      } else {
+        throw new Error(`Invalid leaseEnd format: ${typeof value.leaseEnd}`);
+      }
+    } catch (dateError) {
+      console.error('❌ Date conversion error:', dateError);
+      return res.status(400).json({ 
+        error: 'Invalid date format',
+        message: dateError.message 
+      });
+    }
+    
+    // Prepare update data - only include fields that should be updated
+    // Don't include id, userId, organizationId, createdAt as these shouldn't change
     const updateData = {
-      ...value,
-      leaseStart: admin.firestore.Timestamp.fromDate(new Date(value.leaseStart)),
-      leaseEnd: value.leaseEnd ? admin.firestore.Timestamp.fromDate(new Date(value.leaseEnd)) : null,
+      propertyId: value.propertyId,
+      spaceId: value.spaceId || '',
+      spaceName: value.spaceName || '',
+      tenantName: value.tenantName,
+      tenantEmail: value.tenantEmail || '',
+      tenantPhone: value.tenantPhone || '',
+      nationalId: value.nationalId || '',
+      emergencyContact: value.emergencyContact || '',
+      monthlyRent: value.monthlyRent || 0,
+      baseRent: value.baseRent || 0,
+      utilitiesAmount: value.utilitiesAmount || 0,
+      deposit: value.deposit || 0,
+      securityDeposit: value.securityDeposit || 0,
+      paymentDueDate: value.paymentDueDate || 1,
+      rentEscalation: value.rentEscalation || 0,
+      agreementType: value.agreementType || 'standard',
+      leaseDurationMonths: value.leaseDurationMonths || 12,
+      notes: value.notes || '',
+      status: value.status || 'active',
+      leaseStart: leaseStartTimestamp,
+      leaseEnd: leaseEndTimestamp,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
     
+    console.log('📝 Update data prepared:', JSON.stringify(updateData, null, 2));
+    
     await db.collection('rent').doc(rentId).update(updateData);
+    
+    console.log(`✅ Rent record ${rentId} updated successfully`);
     
     res.json({
       success: true,
@@ -596,8 +727,13 @@ router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermissio
       rentRecord: { id: rentId, ...updateData }
     });
   } catch (error) {
-    console.error('Update rent record error:', error);
-    res.status(500).json({ error: 'Failed to update rent record' });
+    console.error('❌ Update rent record error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to update rent record',
+      message: error.message,
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    });
   }
 });
 

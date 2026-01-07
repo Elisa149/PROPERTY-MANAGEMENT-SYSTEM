@@ -24,6 +24,13 @@ import {
   MenuItem,
   Tooltip,
   Avatar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
 } from '@mui/material';
 import {
   People,
@@ -44,9 +51,11 @@ import {
   Payment,
   Warning,
   CheckCircle,
+  Autorenew,
 } from '@mui/icons-material';
-import { format, differenceInDays } from 'date-fns';
+import { format, differenceInDays, addMonths, addYears } from 'date-fns';
 import toast from 'react-hot-toast';
+import { useMutation, useQueryClient } from 'react-query';
 
 import { propertiesAPI, rentAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -54,11 +63,16 @@ import PropertySelectorDialog from '../components/PropertySelectorDialog';
 
 const TenantsPage = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [tabValue, setTabValue] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [propertyDialog, setPropertyDialog] = useState(false);
+  const [renewDialog, setRenewDialog] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState(null);
+  const [newLeaseEnd, setNewLeaseEnd] = useState('');
+  const [renewalPeriod, setRenewalPeriod] = useState('12'); // months
 
   // Fetch all properties
   const {
@@ -73,6 +87,24 @@ const TenantsPage = () => {
     isLoading: rentLoading,
     error: rentError,
   } = useQuery('rent', rentAPI.getAll);
+
+  // Lease renewal mutation
+  const renewLeaseMutation = useMutation(
+    ({ rentId, updatedData }) => rentAPI.update(rentId, updatedData),
+    {
+      onSuccess: () => {
+        toast.success('Lease renewed successfully!');
+        queryClient.invalidateQueries('rent');
+        setRenewDialog(false);
+        setSelectedTenant(null);
+        setNewLeaseEnd('');
+        setRenewalPeriod('12');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to renew lease');
+      },
+    }
+  );
 
   if (propertiesLoading || rentLoading) {
     return <LoadingSpinner message="Loading tenant information..." />;
@@ -246,6 +278,104 @@ const TenantsPage = () => {
     return name?.split(' ').map(n => n[0]).join('').toUpperCase() || '?';
   };
 
+  // Handle lease renewal
+  const handleRenewLease = (tenant) => {
+    setSelectedTenant(tenant);
+    // Calculate default new lease end date (12 months from today or from original end date if expired)
+    const baseDate = tenant.isExpired && tenant.leaseEnd 
+      ? new Date(tenant.leaseEnd) 
+      : new Date();
+    const defaultEndDate = addMonths(baseDate, 12);
+    setNewLeaseEnd(format(defaultEndDate, 'yyyy-MM-dd'));
+    setRenewalPeriod('12');
+    setRenewDialog(true);
+  };
+
+  const handleRenewalPeriodChange = (period) => {
+    setRenewalPeriod(period);
+    const baseDate = selectedTenant?.isExpired && selectedTenant?.leaseEnd 
+      ? new Date(selectedTenant.leaseEnd) 
+      : new Date();
+    const newEndDate = period === 'custom' 
+      ? newLeaseEnd 
+      : format(addMonths(baseDate, parseInt(period)), 'yyyy-MM-dd');
+    setNewLeaseEnd(newEndDate);
+  };
+
+  const handleConfirmRenewal = () => {
+    if (!selectedTenant || !newLeaseEnd) {
+      toast.error('Please select a valid lease end date');
+      return;
+    }
+
+    // Get the original rent record data
+    const rentRecord = rentRecords.find(r => r.id === selectedTenant.id);
+    if (!rentRecord) {
+      toast.error('Rent record not found');
+      return;
+    }
+
+    // Validate new lease end date is in the future
+    const newEndDate = new Date(newLeaseEnd);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (newEndDate <= today) {
+      toast.error('New lease end date must be in the future');
+      return;
+    }
+
+    // Prepare update data - include all required fields from rent schema
+    // Map fields correctly based on rent record structure
+    // Handle Firestore Timestamp conversion for dates
+    const getDateValue = (dateValue) => {
+      if (!dateValue) return null;
+      // Handle Firestore Timestamp
+      if (dateValue.toDate && typeof dateValue.toDate === 'function') {
+        return dateValue.toDate();
+      }
+      // Handle Date object
+      if (dateValue instanceof Date) {
+        return dateValue;
+      }
+      // Handle string or number timestamp
+      return new Date(dateValue);
+    };
+
+    const leaseStartDate = getDateValue(rentRecord.leaseStart) || new Date();
+    
+    const updatedData = {
+      propertyId: rentRecord.propertyId,
+      spaceId: rentRecord.spaceId || '',
+      spaceName: rentRecord.spaceName || selectedTenant.spaceName || '',
+      tenantName: rentRecord.tenantName,
+      tenantEmail: rentRecord.email || rentRecord.tenantEmail || '',
+      tenantPhone: rentRecord.phone || rentRecord.tenantPhone || '',
+      nationalId: rentRecord.nationalId || '',
+      emergencyContact: rentRecord.emergencyContact || '',
+      // Ensure all numeric fields are numbers, not strings
+      monthlyRent: Number(rentRecord.monthlyRent || selectedTenant.monthlyRent || 0),
+      baseRent: Number(rentRecord.baseRent || rentRecord.monthlyRent || 0),
+      utilitiesAmount: Number(rentRecord.utilitiesAmount || 0),
+      deposit: Number(rentRecord.deposit || 0),
+      securityDeposit: Number(rentRecord.securityDeposit || 0),
+      paymentDueDate: Number(rentRecord.paymentDueDate || 1),
+      rentEscalation: Number(rentRecord.rentEscalation || 0),
+      agreementType: rentRecord.agreementType || 'standard',
+      leaseDurationMonths: Number(rentRecord.leaseDurationMonths || 12),
+      notes: rentRecord.notes || '',
+      // Send dates as ISO strings (Joi will parse them correctly)
+      leaseStart: format(leaseStartDate, 'yyyy-MM-dd'),
+      leaseEnd: newLeaseEnd,
+      status: 'active', // Reactivate if expired
+    };
+
+    renewLeaseMutation.mutate({
+      rentId: selectedTenant.id,
+      updatedData,
+    });
+  };
+
   return (
     <Box>
       {/* Header */}
@@ -340,6 +470,7 @@ const TenantsPage = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', p: 2, gap: 2, flexWrap: 'wrap' }}>
           <TextField
             size="small"
+            id="searchTenants"
             placeholder="Search tenants, properties, or spaces..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -355,6 +486,7 @@ const TenantsPage = () => {
           
           <TextField
             size="small"
+            id="propertyFilter"
             select
             label="Property"
             value={propertyFilter}
@@ -377,6 +509,7 @@ const TenantsPage = () => {
 
           <TextField
             size="small"
+            id="statusFilter"
             select
             label="Lease Status"
             value={statusFilter}
@@ -597,6 +730,22 @@ const TenantsPage = () => {
                 {/* Actions */}
                 <TableCell>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {(tenant.isExpired || tenant.isExpiringSoon) && (
+                      <Tooltip title={tenant.isExpired ? "Renew Expired Lease" : "Renew Lease (Expiring Soon)"}>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          startIcon={<Autorenew />}
+                          onClick={() => handleRenewLease(tenant)}
+                          color={tenant.isExpired ? "error" : "warning"}
+                          fullWidth
+                          sx={{ mb: 1 }}
+                        >
+                          {tenant.isExpired ? "Renew Expired Lease" : "Renew Lease"}
+                        </Button>
+                      </Tooltip>
+                    )}
+                    
                     <Tooltip title="View Property Details">
                       <Button
                         size="small"
@@ -658,6 +807,116 @@ const TenantsPage = () => {
         open={propertyDialog}
         onClose={() => setPropertyDialog(false)}
       />
+
+      {/* Lease Renewal Dialog */}
+      <Dialog 
+        open={renewDialog} 
+        onClose={() => {
+          setRenewDialog(false);
+          setSelectedTenant(null);
+          setNewLeaseEnd('');
+          setRenewalPeriod('12');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Autorenew color="warning" />
+            <Typography variant="h6">Renew Lease</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {selectedTenant && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, mt: 1 }}>
+              <Alert severity="info">
+                <Typography variant="body2">
+                  <strong>Tenant:</strong> {selectedTenant.tenantName}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Property:</strong> {selectedTenant.propertyName} - {selectedTenant.spaceName}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Current Lease End:</strong> {selectedTenant.leaseEnd 
+                    ? format(new Date(selectedTenant.leaseEnd), 'MMM dd, yyyy')
+                    : 'N/A'}
+                </Typography>
+                {selectedTenant.isExpired && (
+                  <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
+                    ⚠️ This lease expired {Math.abs(selectedTenant.daysUntilExpiry)} days ago
+                  </Typography>
+                )}
+              </Alert>
+
+              <FormControl fullWidth>
+                <InputLabel htmlFor="renewal-period">Renewal Period</InputLabel>
+                <Select
+                  id="renewal-period"
+                  value={renewalPeriod}
+                  onChange={(e) => handleRenewalPeriodChange(e.target.value)}
+                  label="Renewal Period"
+                >
+                  <MenuItem value="6">6 Months</MenuItem>
+                  <MenuItem value="12">12 Months (1 Year)</MenuItem>
+                  <MenuItem value="18">18 Months</MenuItem>
+                  <MenuItem value="24">24 Months (2 Years)</MenuItem>
+                  <MenuItem value="36">36 Months (3 Years)</MenuItem>
+                  <MenuItem value="custom">Custom Date</MenuItem>
+                </Select>
+              </FormControl>
+
+              <TextField
+                fullWidth
+                id="newLeaseEnd"
+                label="New Lease End Date"
+                type="date"
+                value={newLeaseEnd}
+                onChange={(e) => setNewLeaseEnd(e.target.value)}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                inputProps={{
+                  min: format(new Date(), 'yyyy-MM-dd'),
+                }}
+                helperText="Select the new lease expiration date"
+              />
+
+              {newLeaseEnd && (
+                <Alert severity="success">
+                  <Typography variant="body2">
+                    <strong>New Lease End:</strong> {format(new Date(newLeaseEnd), 'MMMM dd, yyyy')}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {differenceInDays(new Date(newLeaseEnd), new Date())} days from today
+                  </Typography>
+                </Alert>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setRenewDialog(false);
+              setSelectedTenant(null);
+              setNewLeaseEnd('');
+              setRenewalPeriod('12');
+            }}
+            disabled={renewLeaseMutation.isLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmRenewal}
+            variant="contained"
+            color="warning"
+            startIcon={<Autorenew />}
+            disabled={!newLeaseEnd || renewLeaseMutation.isLoading}
+          >
+            {renewLeaseMutation.isLoading ? 'Renewing...' : 'Renew Lease'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

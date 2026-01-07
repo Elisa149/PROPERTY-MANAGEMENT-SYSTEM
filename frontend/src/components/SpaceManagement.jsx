@@ -247,6 +247,7 @@ const SpaceManagement = ({ floors, onFloorsChange, errors = {} }) => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id={`floorName-${floorIndex}`}
                   label="Floor Name"
                   value={floor.floorName || ''}
                   onChange={(e) => updateFloor(floorIndex, 'floorName', e.target.value)}
@@ -256,6 +257,7 @@ const SpaceManagement = ({ floors, onFloorsChange, errors = {} }) => {
               <Grid item xs={12} md={6}>
                 <TextField
                   fullWidth
+                  id={`floorDescription-${floorIndex}`}
                   label="Floor Description"
                   value={floor.description || ''}
                   onChange={(e) => updateFloor(floorIndex, 'description', e.target.value)}
@@ -406,8 +408,9 @@ const SpaceManagement = ({ floors, onFloorsChange, errors = {} }) => {
             
             <Grid item xs={12} md={6}>
               <FormControl fullWidth>
-                <InputLabel>Space Type</InputLabel>
+                <InputLabel htmlFor="space-type">Space Type</InputLabel>
                 <Select
+                  id="space-type"
                   value={spaceForm.spaceType}
                   onChange={(e) => setSpaceForm({ ...spaceForm, spaceType: e.target.value })}
                   label="Space Type"
@@ -423,8 +426,9 @@ const SpaceManagement = ({ floors, onFloorsChange, errors = {} }) => {
 
             <Grid item xs={12} md={6}>
               <FormControl fullWidth>
-                <InputLabel>Status</InputLabel>
+                <InputLabel htmlFor="space-status">Status</InputLabel>
                 <Select
+                  id="space-status"
                   value={spaceForm.status}
                   onChange={(e) => setSpaceForm({ ...spaceForm, status: e.target.value })}
                   label="Status"

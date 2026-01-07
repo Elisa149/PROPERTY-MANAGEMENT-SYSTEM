@@ -15,7 +15,7 @@ import {
 } from '@mui/material';
 import { Print, Close } from '@mui/icons-material';
 import QRCode from 'qrcode';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns';
 
 const PaymentReceipt = ({ payment, open, onClose }) => {
   const [qrCodeDataURL, setQrCodeDataURL] = useState('');
@@ -192,9 +192,32 @@ const PaymentReceipt = ({ payment, open, onClose }) => {
 
   if (!payment) return null;
 
-  const paymentDate = payment.paymentDate ? new Date(payment.paymentDate) : new Date();
-  const paymentTime = format(paymentDate, 'HH:mm:ss');
-  const paymentDateFormatted = format(paymentDate, 'yyyy-MM-dd');
+  // Helper function to safely parse payment date
+  const parsePaymentDate = (dateValue) => {
+    if (!dateValue) return new Date();
+    
+    let parsedDate;
+    
+    // Handle Firestore Timestamp objects
+    if (dateValue && typeof dateValue === 'object' && dateValue.toDate) {
+      parsedDate = dateValue.toDate();
+    }
+    // Handle Firestore Timestamp with seconds/nanoseconds
+    else if (dateValue && typeof dateValue === 'object' && dateValue.seconds) {
+      parsedDate = new Date(dateValue.seconds * 1000);
+    }
+    // Handle string or number dates
+    else {
+      parsedDate = new Date(dateValue);
+    }
+    
+    // Check if the date is valid, fallback to current date if invalid
+    return isValid(parsedDate) ? parsedDate : new Date();
+  };
+
+  const paymentDate = parsePaymentDate(payment.paymentDate);
+  const paymentTime = isValid(paymentDate) ? format(paymentDate, 'HH:mm:ss') : format(new Date(), 'HH:mm:ss');
+  const paymentDateFormatted = isValid(paymentDate) ? format(paymentDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd');
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -594,7 +617,7 @@ const PaymentReceipt = ({ payment, open, onClose }) => {
                         }}
                       >
                         <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                          {format(paymentDate, 'MMMM yyyy')}
+                          {isValid(paymentDate) ? format(paymentDate, 'MMMM yyyy') : format(new Date(), 'MMMM yyyy')}
                         </Typography>
                       </Box>
                     </Box>
@@ -828,7 +851,7 @@ const PaymentReceipt = ({ payment, open, onClose }) => {
                 >
                   <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
                     Monthly rent payment for {payment.propertyName || 'property'} 
-                    for the period of {format(paymentDate, 'MMMM yyyy')}. 
+                    for the period of {isValid(paymentDate) ? format(paymentDate, 'MMMM yyyy') : format(new Date(), 'MMMM yyyy')}. 
                     Payment method: {payment.paymentMethod?.replace('_', ' ').toUpperCase() || 'CASH'}.
                     {payment.lateFee > 0 && (
                       <> Late fee of UGX {payment.lateFee.toLocaleString()} included.</>

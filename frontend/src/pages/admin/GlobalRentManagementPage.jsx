@@ -219,6 +219,7 @@ const GlobalRentManagementPage = () => {
           <Grid item xs={12} md={4}>
             <TextField
               fullWidth
+              id="searchRent"
               placeholder="Search by organization, tenant, or property..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -229,8 +230,9 @@ const GlobalRentManagementPage = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <FormControl fullWidth>
-              <InputLabel>Filter by Organization</InputLabel>
+              <InputLabel htmlFor="filter-org-rent">Filter by Organization</InputLabel>
               <Select
+                id="filter-org-rent"
                 value={filterOrganization}
                 label="Filter by Organization"
                 onChange={(e) => setFilterOrganization(e.target.value)}
@@ -246,8 +248,9 @@ const GlobalRentManagementPage = () => {
           </Grid>
           <Grid item xs={12} md={4}>
             <FormControl fullWidth>
-              <InputLabel>Filter by Status</InputLabel>
+              <InputLabel htmlFor="filter-status-rent">Filter by Status</InputLabel>
               <Select
+                id="filter-status-rent"
                 value={filterStatus}
                 label="Filter by Status"
                 onChange={(e) => setFilterStatus(e.target.value)}

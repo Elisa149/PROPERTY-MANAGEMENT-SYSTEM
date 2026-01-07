@@ -16,6 +16,7 @@ const router = express.Router();
 const paymentSchema = Joi.object({
   propertyId: Joi.string().required(),
   rentId: Joi.string().required(),
+  invoiceId: Joi.string().allow(''), // Optional - link payment to invoice
   amount: Joi.number().min(0).required(),
   paymentDate: Joi.date().required(),
   paymentMethod: Joi.string().valid('cash', 'check', 'bank_transfer', 'online', 'credit_card', 'other').required(),
@@ -374,12 +375,28 @@ router.post('/', verifyTokenWithRBAC, requireOrganization, requireAnyPermission(
       return res.status(400).json({ error: 'Invalid rent record for this property' });
     }
     
+    // Verify invoice exists if invoiceId is provided
+    if (value.invoiceId) {
+      const invoiceDoc = await db.collection('invoices').doc(value.invoiceId).get();
+      if (!invoiceDoc.exists) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+      const invoiceData = invoiceDoc.data();
+      if (invoiceData.organizationId !== organizationId) {
+        return res.status(403).json({ error: 'Invoice not in your organization' });
+      }
+      if (invoiceData.rentId !== value.rentId) {
+        return res.status(400).json({ error: 'Invoice does not match rent record' });
+      }
+    }
+    
     const paymentId = uuidv4();
     const paymentData = {
       ...value,
       id: paymentId,
       organizationId,
       createdBy: userId,
+      invoiceId: value.invoiceId || '',
       paymentDate: admin.firestore.Timestamp.fromDate(new Date(value.paymentDate)),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),

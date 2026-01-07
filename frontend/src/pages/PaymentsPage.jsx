@@ -51,7 +51,7 @@ import {
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import toast from 'react-hot-toast';
 
-import { paymentsAPI, propertiesAPI } from '../services/api';
+import { paymentsAPI, propertiesAPI, invoicesAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import PaymentReceipt from '../components/PaymentReceipt';
@@ -98,6 +98,7 @@ const PaymentsPage = () => {
   const [filterProperty, setFilterProperty] = useState('all');
   const [filterMethod, setFilterMethod] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterInvoice, setFilterInvoice] = useState('all'); // New filter for invoices
   const [dateRange, setDateRange] = useState({
     start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
     end: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
@@ -118,20 +119,41 @@ const PaymentsPage = () => {
   // Fetch properties for filter
   const { data: propertiesData } = useQuery('properties', propertiesAPI.getAll);
 
+  // Fetch invoices to get invoice numbers for payments
+  const { data: invoicesData } = useQuery('invoices', invoicesAPI.getAll);
+
   // Extract data (must be before early returns to maintain hook order)
   const payments = paymentsData?.data?.payments || [];
   const properties = propertiesData?.data?.properties || [];
+  const invoices = invoicesData?.data?.invoices || [];
+  
+  // Create invoice map for quick lookup (by ID and by invoice number)
+  const invoiceMap = useMemo(() => {
+    const map = {};
+    const mapByNumber = {};
+    invoices.forEach(inv => {
+      map[inv.id] = inv;
+      if (inv.invoiceNumber) {
+        mapByNumber[inv.invoiceNumber] = inv;
+      }
+    });
+    return { byId: map, byNumber: mapByNumber };
+  }, [invoices]);
 
   // Filter and search payments (must be before early returns)
   const filteredPayments = useMemo(() => {
     if (!payments || payments.length === 0) return [];
     return payments.filter(payment => {
-      // Search filter
+      // Search filter - now includes invoice numbers
       const searchLower = searchQuery.toLowerCase();
+      const invoice = payment.invoiceId && invoiceMap.byId[payment.invoiceId];
+      const invoiceNumber = invoice?.invoiceNumber?.toLowerCase() || '';
       const matchesSearch = !searchQuery || 
         payment.tenantName?.toLowerCase().includes(searchLower) ||
         payment.propertyName?.toLowerCase().includes(searchLower) ||
-        payment.transactionId?.toLowerCase().includes(searchLower);
+        payment.transactionId?.toLowerCase().includes(searchLower) ||
+        invoiceNumber.includes(searchLower) ||
+        payment.invoiceId?.toLowerCase().includes(searchLower);
 
       // Property filter
       const matchesProperty = filterProperty === 'all' || payment.propertyId === filterProperty;
@@ -142,6 +164,12 @@ const PaymentsPage = () => {
       // Status filter
       const matchesStatus = filterStatus === 'all' || payment.status === filterStatus;
 
+      // Invoice filter - new filter
+      const matchesInvoice = filterInvoice === 'all' || 
+        (filterInvoice === 'with_invoice' && payment.invoiceId) ||
+        (filterInvoice === 'without_invoice' && !payment.invoiceId) ||
+        (filterInvoice !== 'all' && filterInvoice !== 'with_invoice' && filterInvoice !== 'without_invoice' && payment.invoiceId === filterInvoice);
+
       // Date range filter
       const paymentDate = new Date(payment.paymentDate);
       const matchesDateRange = dateRange.start && dateRange.end
@@ -151,9 +179,9 @@ const PaymentsPage = () => {
           })
         : true;
 
-      return matchesSearch && matchesProperty && matchesMethod && matchesStatus && matchesDateRange;
+      return matchesSearch && matchesProperty && matchesMethod && matchesStatus && matchesInvoice && matchesDateRange;
     });
-  }, [payments, searchQuery, filterProperty, filterMethod, filterStatus, dateRange]);
+  }, [payments, searchQuery, filterProperty, filterMethod, filterStatus, filterInvoice, dateRange, invoiceMap]);
 
   // Calculate statistics (must be before early returns)
   const stats = useMemo(() => {
@@ -165,7 +193,9 @@ const PaymentsPage = () => {
         count: 0,
         completed: 0,
         pending: 0,
-        byMethod: {}
+        byMethod: {},
+        invoicePayments: 0,
+        invoicePaymentsAmount: 0,
       };
     }
     const total = filteredPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -179,6 +209,12 @@ const PaymentsPage = () => {
       byMethod[p.paymentMethod] = (byMethod[p.paymentMethod] || 0) + (p.amount || 0);
     });
 
+    // Calculate invoice-linked payments statistics
+    const invoicePayments = filteredPayments.filter(p => p.invoiceId).length;
+    const invoicePaymentsAmount = filteredPayments
+      .filter(p => p.invoiceId)
+      .reduce((sum, p) => sum + (p.amount || 0) + (p.lateFee || 0), 0);
+
     return {
       total,
       totalWithFees,
@@ -187,6 +223,8 @@ const PaymentsPage = () => {
       completed,
       pending,
       byMethod,
+      invoicePayments,
+      invoicePaymentsAmount,
     };
   }, [filteredPayments]);
 
@@ -202,12 +240,15 @@ const PaymentsPage = () => {
 
   const handleExport = () => {
     // Create CSV export
-    const headers = ['Date', 'Tenant', 'Property', 'Amount', 'Method', 'Status', 'Transaction ID'];
+    const headers = ['Date', 'Tenant', 'Property', 'Invoice', 'Amount', 'Late Fee', 'Total', 'Method', 'Status', 'Transaction ID'];
     const rows = filteredPayments.map(p => [
       format(new Date(p.paymentDate), 'yyyy-MM-dd'),
       p.tenantName || '',
       p.propertyName || '',
+      p.invoiceId && invoiceMap.byId[p.invoiceId] ? invoiceMap.byId[p.invoiceId].invoiceNumber : (p.invoiceId || 'No Invoice'),
       p.amount || 0,
+      p.lateFee || 0,
+      (p.amount || 0) + (p.lateFee || 0),
       p.paymentMethod || '',
       p.status || '',
       p.transactionId || '',
@@ -263,7 +304,7 @@ const PaymentsPage = () => {
 
       {/* Statistics Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -282,7 +323,26 @@ const PaymentsPage = () => {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
+          <Card>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Receipt sx={{ color: 'primary.main', mr: 1 }} />
+                <Typography variant="h6" color="primary.main">
+                  Invoice Payments
+                </Typography>
+              </Box>
+              <Typography variant="h4" color="primary.main">
+                {formatCurrency(stats.invoicePaymentsAmount)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {stats.invoicePayments} payments on invoices
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={2.4}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -301,7 +361,7 @@ const PaymentsPage = () => {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -320,7 +380,7 @@ const PaymentsPage = () => {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={2.4}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
@@ -364,8 +424,9 @@ const PaymentsPage = () => {
           </Grid>
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
-              <InputLabel>Property</InputLabel>
+              <InputLabel htmlFor="filter-property">Property</InputLabel>
               <Select
+                id="filter-property"
                 value={filterProperty}
                 label="Property"
                 onChange={(e) => setFilterProperty(e.target.value)}
@@ -381,8 +442,9 @@ const PaymentsPage = () => {
           </Grid>
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
-              <InputLabel>Method</InputLabel>
+              <InputLabel htmlFor="filter-method">Method</InputLabel>
               <Select
+                id="filter-method"
                 value={filterMethod}
                 label="Method"
                 onChange={(e) => setFilterMethod(e.target.value)}
@@ -399,8 +461,9 @@ const PaymentsPage = () => {
           </Grid>
           <Grid item xs={12} md={2}>
             <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
+              <InputLabel htmlFor="filter-status">Status</InputLabel>
               <Select
+                id="filter-status"
                 value={filterStatus}
                 label="Status"
                 onChange={(e) => setFilterStatus(e.target.value)}
@@ -413,9 +476,35 @@ const PaymentsPage = () => {
               </Select>
             </FormControl>
           </Grid>
+          <Grid item xs={12} md={2}>
+            <FormControl fullWidth>
+              <InputLabel htmlFor="filter-invoice">Invoice</InputLabel>
+              <Select
+                id="filter-invoice"
+                value={filterInvoice}
+                label="Invoice"
+                onChange={(e) => setFilterInvoice(e.target.value)}
+              >
+                <MenuItem value="all">All Payments</MenuItem>
+                <MenuItem value="with_invoice">With Invoice</MenuItem>
+                <MenuItem value="without_invoice">Without Invoice</MenuItem>
+                {invoices
+                  .sort((a, b) => {
+                    // Sort by invoice number descending (newest first)
+                    return (b.invoiceNumber || '').localeCompare(a.invoiceNumber || '');
+                  })
+                  .map(invoice => (
+                    <MenuItem key={invoice.id} value={invoice.id}>
+                      {invoice.invoiceNumber} {invoice.tenantName ? `(${invoice.tenantName})` : ''}
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+          </Grid>
           <Grid item xs={12} md={1.5}>
             <TextField
               fullWidth
+              id="fromDate"
               label="From Date"
               type="date"
               value={dateRange.start}
@@ -426,6 +515,7 @@ const PaymentsPage = () => {
           <Grid item xs={12} md={1.5}>
             <TextField
               fullWidth
+              id="toDate"
               label="To Date"
               type="date"
               value={dateRange.end}
@@ -450,6 +540,7 @@ const PaymentsPage = () => {
                 <TableCell><strong>Date</strong></TableCell>
                 <TableCell><strong>Tenant</strong></TableCell>
                 <TableCell><strong>Property</strong></TableCell>
+                <TableCell><strong>Invoice</strong></TableCell>
                 <TableCell><strong>Amount</strong></TableCell>
                 <TableCell><strong>Late Fee</strong></TableCell>
                 <TableCell><strong>Method</strong></TableCell>
@@ -461,7 +552,7 @@ const PaymentsPage = () => {
             <TableBody>
               {filteredPayments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} align="center">
+                  <TableCell colSpan={10} align="center">
                     <Box sx={{ py: 4 }}>
                       <Receipt sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
                       <Typography variant="body1" color="text.secondary" gutterBottom>
@@ -501,6 +592,37 @@ const PaymentsPage = () => {
                           {payment.propertyName || 'Unknown Property'}
                         </Typography>
                       </Box>
+                    </TableCell>
+                    <TableCell>
+                      {payment.invoiceId && payment.invoiceId.trim() !== '' && invoiceMap.byId[payment.invoiceId] ? (
+                        <Tooltip title={`Click to view invoice ${invoiceMap.byId[payment.invoiceId].invoiceNumber}`}>
+                          <Chip
+                            label={invoiceMap.byId[payment.invoiceId].invoiceNumber}
+                            size="small"
+                            color="primary"
+                            variant="filled"
+                            icon={<Receipt sx={{ fontSize: 14 }} />}
+                            onClick={() => navigate(`/app/invoices/${payment.invoiceId}`)}
+                            sx={{ cursor: 'pointer', fontWeight: 'bold' }}
+                          />
+                        </Tooltip>
+                      ) : payment.invoiceId && payment.invoiceId.trim() !== '' ? (
+                        <Tooltip title={`Invoice ID: ${payment.invoiceId} (Invoice not found - may need to refresh)`}>
+                          <Chip
+                            label={`ID: ${payment.invoiceId.substring(0, 12)}...`}
+                            size="small"
+                            color="warning"
+                            variant="outlined"
+                            icon={<Receipt sx={{ fontSize: 14 }} />}
+                            onClick={() => navigate(`/app/invoices/${payment.invoiceId}`)}
+                            sx={{ cursor: 'pointer' }}
+                          />
+                        </Tooltip>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary" fontStyle="italic">
+                          No invoice
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight="bold" color="success.main">
@@ -652,6 +774,39 @@ const PaymentsPage = () => {
                     <Typography variant="body2" fontFamily="monospace">
                       {selectedPayment.transactionId}
                     </Typography>
+                  </Grid>
+                )}
+                {selectedPayment.invoiceId && selectedPayment.invoiceId.trim() !== '' && (
+                  <Grid item xs={12}>
+                    <Typography variant="caption" color="text.secondary">
+                      Invoice
+                    </Typography>
+                    <Box sx={{ mt: 0.5 }}>
+                      {invoiceMap.byId[selectedPayment.invoiceId] ? (
+                        <Chip
+                          label={invoiceMap.byId[selectedPayment.invoiceId].invoiceNumber}
+                          color="primary"
+                          icon={<Receipt />}
+                          onClick={() => {
+                            setDetailsDialogOpen(false);
+                            navigate(`/app/invoices/${selectedPayment.invoiceId}`);
+                          }}
+                          sx={{ cursor: 'pointer', fontWeight: 'bold' }}
+                        />
+                      ) : (
+                        <Chip
+                          label={`Invoice ID: ${selectedPayment.invoiceId.substring(0, 20)}...`}
+                          color="warning"
+                          variant="outlined"
+                          icon={<Receipt />}
+                          onClick={() => {
+                            setDetailsDialogOpen(false);
+                            navigate(`/app/invoices/${selectedPayment.invoiceId}`);
+                          }}
+                          sx={{ cursor: 'pointer' }}
+                        />
+                      )}
+                    </Box>
                   </Grid>
                 )}
                 {selectedPayment.notes && (
