@@ -1,7 +1,6 @@
 const admin = require('firebase-admin');
 const { ROLE_PERMISSIONS } = require('../models/rbac-schemas');
 
-
 // Enhanced authentication middleware with RBAC
 const verifyTokenWithRBAC = async (req, res, next) => {
   try {
@@ -417,8 +416,7 @@ const checkPropertyAccess = async (req, res, next) => {
 };
 
 // Filter properties based on user permissions and scope
-// NOTE: For property managers, this returns ALL organization properties for READ access
-// Write access (create/update/delete) is still restricted to assigned properties via checkPropertyAccess
+// NOTE: Property managers now have full access to all organization properties (read and write)
 const filterPropertiesByAccess = async (userId, organizationId, permissions) => {
   const db = admin.firestore();
   
@@ -434,8 +432,8 @@ const filterPropertiesByAccess = async (userId, organizationId, permissions) => 
       .get();
   }
   
-  // Property manager/caretaker can VIEW all properties in their organization
-  // But can only MANAGE (create/update/delete) assigned properties
+  // Property manager with assigned scope can VIEW all properties in their organization
+  // (This is kept for backward compatibility with custom roles that may use :assigned scope)
   if (hasPermission(permissions, 'properties:read:assigned')) {
     // Return all organization properties for viewing
     return await db.collection('properties')

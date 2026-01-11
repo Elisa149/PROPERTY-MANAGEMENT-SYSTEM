@@ -231,10 +231,10 @@ router.get('/property/:propertyId', verifyTokenWithRBAC, requireOrganization, re
       rentRecords.push({
         id: doc.id,
         ...rentData,
-        leaseStart: rentData.leaseStart?.toDate(),
-        leaseEnd: rentData.leaseEnd?.toDate(),
-        createdAt: rentData.createdAt?.toDate(),
-        updatedAt: rentData.updatedAt?.toDate(),
+        leaseStart: rentData.leaseStart?.toDate ? rentData.leaseStart.toDate() : rentData.leaseStart,
+        leaseEnd: rentData.leaseEnd?.toDate ? rentData.leaseEnd.toDate() : rentData.leaseEnd,
+        createdAt: rentData.createdAt?.toDate ? rentData.createdAt.toDate() : rentData.createdAt,
+        updatedAt: rentData.updatedAt?.toDate ? rentData.updatedAt.toDate() : rentData.updatedAt,
       });
     });
     
@@ -690,6 +690,7 @@ router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermissio
     
     // Prepare update data - only include fields that should be updated
     // Don't include id, userId, organizationId, createdAt as these shouldn't change
+    // Ensure all numeric fields are properly converted to numbers
     const updateData = {
       propertyId: value.propertyId,
       spaceId: value.spaceId || '',
@@ -699,15 +700,15 @@ router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermissio
       tenantPhone: value.tenantPhone || '',
       nationalId: value.nationalId || '',
       emergencyContact: value.emergencyContact || '',
-      monthlyRent: value.monthlyRent || 0,
-      baseRent: value.baseRent || 0,
-      utilitiesAmount: value.utilitiesAmount || 0,
-      deposit: value.deposit || 0,
-      securityDeposit: value.securityDeposit || 0,
-      paymentDueDate: value.paymentDueDate || 1,
-      rentEscalation: value.rentEscalation || 0,
+      monthlyRent: Number(value.monthlyRent) || 0,
+      baseRent: Number(value.baseRent) || 0,
+      utilitiesAmount: Number(value.utilitiesAmount) || 0,
+      deposit: Number(value.deposit) || 0,
+      securityDeposit: Number(value.securityDeposit) || 0,
+      paymentDueDate: Number(value.paymentDueDate) || 1,
+      rentEscalation: Number(value.rentEscalation) || 0,
       agreementType: value.agreementType || 'standard',
-      leaseDurationMonths: value.leaseDurationMonths || 12,
+      leaseDurationMonths: Number(value.leaseDurationMonths) || 12,
       notes: value.notes || '',
       status: value.status || 'active',
       leaseStart: leaseStartTimestamp,
@@ -716,10 +717,12 @@ router.put('/:id', verifyTokenWithRBAC, requireOrganization, requireAnyPermissio
     };
     
     console.log('📝 Update data prepared:', JSON.stringify(updateData, null, 2));
+    console.log('📝 Monthly rent value received:', value.monthlyRent, 'Type:', typeof value.monthlyRent);
+    console.log('📝 Monthly rent after conversion:', updateData.monthlyRent, 'Type:', typeof updateData.monthlyRent);
     
     await db.collection('rent').doc(rentId).update(updateData);
     
-    console.log(`✅ Rent record ${rentId} updated successfully`);
+    console.log(`✅ Rent record ${rentId} updated successfully with monthlyRent: ${updateData.monthlyRent}`);
     
     res.json({
       success: true,

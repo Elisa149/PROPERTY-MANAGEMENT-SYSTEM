@@ -196,9 +196,24 @@ router.post('/', verifyTokenWithRBAC, requireOrganization, requirePermission('pr
 // PUT /api/properties/:id - Update a property
 router.put('/:id', verifyTokenWithRBAC, requireOrganization, checkPropertyAccess, requireAnyPermission(['properties:update:organization', 'properties:update:assigned']), async (req, res) => {
   try {
-    const { error, value } = rbacPropertySchema.validate(req.body);
+    console.log('📝 Received property update request for ID:', req.params.id);
+    console.log('📦 Request body keys:', Object.keys(req.body));
+    console.log('📦 Request body type:', req.body.type);
+    console.log('📦 establishmentDate value:', req.body.establishmentDate, 'type:', typeof req.body.establishmentDate);
+    
+    const { error, value } = rbacPropertySchema.validate(req.body, { abortEarly: false });
     if (error) {
-      return res.status(400).json({ error: error.details[0].message });
+      console.error('❌ Property validation error:', error.details[0].message);
+      console.error('❌ All validation errors:', error.details.map(d => ({
+        message: d.message,
+        path: d.path,
+        type: d.type
+      })));
+      console.error('❌ Failed field details:', JSON.stringify(error.details, null, 2));
+      return res.status(400).json({ 
+        error: error.details[0].message,
+        allErrors: error.details.map(d => d.message)
+      });
     }
     
     const db = admin.firestore();
@@ -213,6 +228,75 @@ router.put('/:id', verifyTokenWithRBAC, requireOrganization, checkPropertyAccess
     };
     
     await db.collection('properties').doc(propertyId).update(updateData);
+    
+    // SYNC FIX: Update rent records when space monthly rent is changed
+    // This ensures tenant rent amounts stay in sync with property space rent
+    try {
+      console.log('🔄 Checking for rent records to sync...');
+      
+      // Get all active rent records for this property
+      const rentSnapshot = await db.collection('rent')
+        .where('propertyId', '==', propertyId)
+        .where('status', '==', 'active')
+        .get();
+      
+      if (!rentSnapshot.empty) {
+        const batch = db.batch();
+        let updatedCount = 0;
+        
+        rentSnapshot.forEach(rentDoc => {
+          const rentData = rentDoc.data();
+          const spaceId = rentData.spaceId;
+          
+          if (!spaceId) {
+            return; // Skip if no spaceId
+          }
+          
+          // Find the matching space in the updated property data
+          let newMonthlyRent = null;
+          
+          if (value.type === 'building' && value.buildingDetails?.floors) {
+            // Search through floors and spaces for building properties
+            for (const floor of value.buildingDetails.floors) {
+              const space = floor.spaces?.find(s => s.spaceId === spaceId);
+              if (space && space.monthlyRent !== undefined) {
+                newMonthlyRent = space.monthlyRent;
+                break;
+              }
+            }
+          } else if (value.type === 'land' && value.landDetails?.squatters) {
+            // Search through squatters for land properties
+            const squatter = value.landDetails.squatters.find(s => s.squatterId === spaceId);
+            if (squatter && squatter.monthlyPayment !== undefined) {
+              newMonthlyRent = squatter.monthlyPayment;
+            }
+          }
+          
+          // Update rent record if monthly rent has changed
+          if (newMonthlyRent !== null && newMonthlyRent !== rentData.monthlyRent) {
+            console.log(`🔄 Syncing rent for space ${spaceId}: ${rentData.monthlyRent} → ${newMonthlyRent}`);
+            batch.update(rentDoc.ref, {
+              monthlyRent: newMonthlyRent,
+              baseRent: newMonthlyRent, // Also update baseRent to match
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            updatedCount++;
+          }
+        });
+        
+        if (updatedCount > 0) {
+          await batch.commit();
+          console.log(`✅ Synced ${updatedCount} rent record(s) with updated space rent amounts`);
+        } else {
+          console.log('ℹ️ No rent records needed syncing');
+        }
+      } else {
+        console.log('ℹ️ No active rent records found for this property');
+      }
+    } catch (syncError) {
+      console.error('⚠️ Warning: Failed to sync rent records:', syncError);
+      // Don't fail the entire request if sync fails - property update already succeeded
+    }
     
     res.json({ 
       success: true, 

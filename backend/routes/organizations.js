@@ -6,7 +6,8 @@ const {
   requirePermission, 
   isSuperAdmin, 
   isOrganizationAdmin,
-  checkOrganizationAccess 
+  checkOrganizationAccess,
+  hasPermission
 } = require('../middleware/rbac');
 
 const router = express.Router();
@@ -365,14 +366,15 @@ router.put('/:organizationId/users/:userId/role', verifyTokenWithRBAC, checkOrga
     const { organizationId, userId } = req.params;
     const { roleId } = req.body;
     const userRole = req.user.role;
+    const isSuperAdmin = userRole && userRole.name === 'super_admin';
     
     // Super admin can update any organization, org admin can only update their own
-    if (!userRole || (userRole.name !== 'super_admin' && userRole.name !== 'org_admin')) {
+    if (!userRole || (!isSuperAdmin && userRole.name !== 'org_admin')) {
       return res.status(403).json({ error: 'Only administrators can update user roles' });
     }
     
-    // Org admin can only update users in their own organization
-    if (userRole.name === 'org_admin' && req.user.organizationId !== organizationId) {
+    // Org admin can only update users in their own organization (super admin bypasses this)
+    if (!isSuperAdmin && userRole.name === 'org_admin' && req.user.organizationId !== organizationId) {
       return res.status(403).json({ error: 'You can only update users in your own organization' });
     }
     
@@ -410,10 +412,17 @@ router.put('/:organizationId/users/:userId/role', verifyTokenWithRBAC, checkOrga
   }
 });
 
-// Remove user from organization (Super Admin only)
-router.delete('/:organizationId/users/:userId', verifyTokenWithRBAC, isSuperAdmin, async (req, res) => {
+// Remove user from organization (Super Admin or Org Admin with permission)
+router.delete('/:organizationId/users/:userId', verifyTokenWithRBAC, checkOrganizationAccess, async (req, res) => {
   try {
     const { organizationId, userId } = req.params;
+    const userRole = req.user.role;
+    const isSuperAdmin = userRole && userRole.name === 'super_admin';
+    
+    // Super admin bypasses permission check, org admin needs permission
+    if (!isSuperAdmin && !hasPermission(req.user.permissions, 'users:delete:organization')) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
     
     // Verify user exists and belongs to organization
     const userDoc = await db.collection('users').doc(userId).get();
@@ -424,6 +433,39 @@ router.delete('/:organizationId/users/:userId', verifyTokenWithRBAC, isSuperAdmi
     const userData = userDoc.data();
     if (userData.organizationId !== organizationId) {
       return res.status(400).json({ error: 'User does not belong to this organization' });
+    }
+    
+    // Prevent org admin from removing themselves (super admin can remove anyone)
+    if (!isSuperAdmin && userRole.name === 'org_admin' && userId === req.user.uid) {
+      return res.status(400).json({ error: 'You cannot remove yourself from the organization' });
+    }
+    
+    // Prevent removing the last org admin (super admin can override)
+    if (userData.roleId) {
+      const roleDoc = await db.collection('roles').doc(userData.roleId).get();
+      if (roleDoc.exists && roleDoc.data().name === 'org_admin') {
+        // Check if there are other org admins
+        const orgAdminsSnapshot = await db.collection('users')
+          .where('organizationId', '==', organizationId)
+          .get();
+        
+        let orgAdminCount = 0;
+        for (const doc of orgAdminsSnapshot.docs) {
+          if (doc.id === userId) continue; // Skip the user being removed
+          const otherUserData = doc.data();
+          if (otherUserData.roleId) {
+            const otherRoleDoc = await db.collection('roles').doc(otherUserData.roleId).get();
+            if (otherRoleDoc.exists && otherRoleDoc.data().name === 'org_admin') {
+              orgAdminCount++;
+            }
+          }
+        }
+        
+        // Super admin can remove last org admin, but org admin cannot
+        if (orgAdminCount === 0 && !isSuperAdmin) {
+          return res.status(400).json({ error: 'Cannot remove the last organization administrator' });
+        }
+      }
     }
     
     // Remove user from organization (set organizationId to null, keep user account)
@@ -439,6 +481,53 @@ router.delete('/:organizationId/users/:userId', verifyTokenWithRBAC, isSuperAdmi
   } catch (error) {
     console.error('Error removing user from organization:', error);
     res.status(500).json({ error: 'Failed to remove user from organization' });
+  }
+});
+
+// Update user status (activate/suspend) - Org Admin or Super Admin
+router.put('/:organizationId/users/:userId/status', verifyTokenWithRBAC, checkOrganizationAccess, async (req, res) => {
+  try {
+    const { organizationId, userId } = req.params;
+    const { status } = req.body;
+    const userRole = req.user.role;
+    const isSuperAdmin = userRole && userRole.name === 'super_admin';
+    
+    // Super admin bypasses permission check, org admin needs permission
+    if (!isSuperAdmin && !hasPermission(req.user.permissions, 'users:status:organization')) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    
+    if (!['active', 'inactive', 'suspended'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be active, inactive, or suspended' });
+    }
+    
+    // Verify user exists and belongs to organization
+    const userDoc = await db.collection('users').doc(userId).get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const userData = userDoc.data();
+    if (userData.organizationId !== organizationId) {
+      return res.status(400).json({ error: 'User does not belong to this organization' });
+    }
+    
+    // Prevent org admin from suspending themselves (super admin can suspend anyone)
+    if (!isSuperAdmin && userRole.name === 'org_admin' && userId === req.user.uid && status !== 'active') {
+      return res.status(400).json({ error: 'You cannot suspend yourself' });
+    }
+    
+    // Update user status
+    await db.collection('users').doc(userId).update({
+      status,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: req.user.uid,
+    });
+    
+    res.json({ message: `User status updated to ${status} successfully` });
+  } catch (error) {
+    console.error('Error updating user status:', error);
+    res.status(500).json({ error: 'Failed to update user status' });
   }
 });
 
@@ -491,6 +580,266 @@ router.get('/:organizationId/roles', verifyTokenWithRBAC, async (req, res) => {
   } catch (error) {
     console.error('Error fetching organization roles:', error);
     res.status(500).json({ error: 'Failed to fetch organization roles' });
+  }
+});
+
+// Create custom role for organization (Org Admin or Super Admin)
+router.post('/:organizationId/roles', verifyTokenWithRBAC, checkOrganizationAccess, async (req, res) => {
+  try {
+    const { organizationId } = req.params;
+    const userRole = req.user.role;
+    const isSuperAdmin = userRole && userRole.name === 'super_admin';
+    
+    // Super admin bypasses permission check, org admin needs permission
+    if (!isSuperAdmin && !hasPermission(req.user.permissions, 'roles:create:organization')) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    
+    const { error, value } = roleSchema.validate(req.body);
+    
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+    
+    // Ensure organizationId matches
+    if (value.organizationId !== organizationId) {
+      return res.status(400).json({ error: 'Organization ID mismatch' });
+    }
+    
+    // Prevent creating system roles
+    if (value.isSystemRole) {
+      return res.status(400).json({ error: 'Cannot create system roles. System roles are predefined.' });
+    }
+    
+    // Check if role name already exists in organization
+    const existingRoles = await db.collection('roles')
+      .where('organizationId', '==', organizationId)
+      .where('name', '==', value.name)
+      .get();
+    
+    if (!existingRoles.empty) {
+      return res.status(400).json({ error: 'Role with this name already exists in the organization' });
+    }
+    
+    // Create role
+    const roleData = {
+      ...value,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: req.user.uid,
+    };
+    
+    const roleRef = await db.collection('roles').add(roleData);
+    
+    res.status(201).json({ 
+      message: 'Role created successfully',
+      roleId: roleRef.id,
+      role: { id: roleRef.id, ...roleData }
+    });
+  } catch (error) {
+    console.error('Error creating role:', error);
+    res.status(500).json({ error: 'Failed to create role' });
+  }
+});
+
+// Update role (Org Admin or Super Admin) - Cannot update system roles
+router.put('/:organizationId/roles/:roleId', verifyTokenWithRBAC, checkOrganizationAccess, async (req, res) => {
+  try {
+    const { organizationId, roleId } = req.params;
+    const userRole = req.user.role;
+    const isSuperAdmin = userRole && userRole.name === 'super_admin';
+    
+    // Super admin bypasses permission check, org admin needs permission
+    if (!isSuperAdmin && !hasPermission(req.user.permissions, 'roles:update:organization')) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    
+    const { error, value } = roleSchema.validate(req.body);
+    
+    if (error) {
+      return res.status(400).json({ error: error.details[0].message });
+    }
+    
+    // Get existing role
+    const roleDoc = await db.collection('roles').doc(roleId).get();
+    if (!roleDoc.exists) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+    
+    const existingRole = roleDoc.data();
+    
+    // Verify role belongs to organization
+    if (existingRole.organizationId !== organizationId) {
+      return res.status(403).json({ error: 'Role does not belong to this organization' });
+    }
+    
+    // Super admin can update system roles, org admin cannot
+    if (!isSuperAdmin && existingRole.isSystemRole) {
+      return res.status(400).json({ error: 'Cannot update system roles. System roles are predefined.' });
+    }
+    
+    // Check if role name change conflicts with existing role
+    if (value.name !== existingRole.name) {
+      const nameConflict = await db.collection('roles')
+        .where('organizationId', '==', organizationId)
+        .where('name', '==', value.name)
+        .get();
+      
+      if (!nameConflict.empty) {
+        return res.status(400).json({ error: 'Role with this name already exists in the organization' });
+      }
+    }
+    
+    // Update role (preserve isSystemRole and createdAt)
+    const updateData = {
+      ...value,
+      organizationId, // Ensure it matches
+      isSystemRole: false, // Custom roles are never system roles
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: req.user.uid,
+    };
+    
+    await db.collection('roles').doc(roleId).update(updateData);
+    
+    res.json({ 
+      message: 'Role updated successfully',
+      role: { id: roleId, ...updateData }
+    });
+  } catch (error) {
+    console.error('Error updating role:', error);
+    res.status(500).json({ error: 'Failed to update role' });
+  }
+});
+
+// Delete role (Org Admin or Super Admin) - Cannot delete system roles
+router.delete('/:organizationId/roles/:roleId', verifyTokenWithRBAC, checkOrganizationAccess, async (req, res) => {
+  try {
+    const { organizationId, roleId } = req.params;
+    const userRole = req.user.role;
+    const isSuperAdmin = userRole && userRole.name === 'super_admin';
+    
+    // Super admin bypasses permission check, org admin needs permission
+    if (!isSuperAdmin && !hasPermission(req.user.permissions, 'roles:delete:organization')) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    
+    // Get existing role
+    const roleDoc = await db.collection('roles').doc(roleId).get();
+    if (!roleDoc.exists) {
+      return res.status(404).json({ error: 'Role not found' });
+    }
+    
+    const roleData = roleDoc.data();
+    
+    // Verify role belongs to organization
+    if (roleData.organizationId !== organizationId) {
+      return res.status(403).json({ error: 'Role does not belong to this organization' });
+    }
+    
+    // Super admin can delete system roles, org admin cannot
+    if (!isSuperAdmin && roleData.isSystemRole) {
+      return res.status(400).json({ error: 'Cannot delete system roles. System roles are predefined.' });
+    }
+    
+    // Check if any users are using this role
+    const usersWithRole = await db.collection('users')
+      .where('organizationId', '==', organizationId)
+      .where('roleId', '==', roleId)
+      .limit(1)
+      .get();
+    
+    // Super admin can force delete, org admin cannot
+    if (!usersWithRole.empty && !isSuperAdmin) {
+      return res.status(400).json({ 
+        error: 'Cannot delete role. Users are currently assigned to this role. Please reassign users first.' 
+      });
+    }
+    
+    // Delete role
+    await db.collection('roles').doc(roleId).delete();
+    
+    res.json({ message: 'Role deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting role:', error);
+    res.status(500).json({ error: 'Failed to delete role' });
+  }
+});
+
+// Get organization invitations (Org Admin or Super Admin)
+router.get('/:organizationId/invitations', verifyTokenWithRBAC, checkOrganizationAccess, requirePermission('users:read:organization'), async (req, res) => {
+  try {
+    const { organizationId } = req.params;
+    const { status } = req.query; // Optional filter: 'pending', 'accepted', 'expired', 'cancelled'
+    
+    let query = db.collection('invitations')
+      .where('organizationId', '==', organizationId);
+    
+    if (status) {
+      query = query.where('status', '==', status);
+    }
+    
+    const snapshot = await query.orderBy('createdAt', 'desc').get();
+    
+    const invitations = [];
+    for (const doc of snapshot.docs) {
+      const invitationData = doc.data();
+      
+      // Get role details
+      let role = null;
+      if (invitationData.roleId) {
+        const roleDoc = await db.collection('roles').doc(invitationData.roleId).get();
+        if (roleDoc.exists) {
+          role = { id: roleDoc.id, ...roleDoc.data() };
+        }
+      }
+      
+      invitations.push({
+        id: doc.id,
+        ...invitationData,
+        role
+      });
+    }
+    
+    res.json({ invitations });
+  } catch (error) {
+    console.error('Error fetching invitations:', error);
+    res.status(500).json({ error: 'Failed to fetch invitations' });
+  }
+});
+
+// Cancel invitation (Org Admin or Super Admin)
+router.put('/:organizationId/invitations/:invitationId/cancel', verifyTokenWithRBAC, checkOrganizationAccess, requirePermission('users:create:organization'), async (req, res) => {
+  try {
+    const { organizationId, invitationId } = req.params;
+    
+    // Get invitation
+    const invitationDoc = await db.collection('invitations').doc(invitationId).get();
+    if (!invitationDoc.exists) {
+      return res.status(404).json({ error: 'Invitation not found' });
+    }
+    
+    const invitationData = invitationDoc.data();
+    
+    // Verify invitation belongs to organization
+    if (invitationData.organizationId !== organizationId) {
+      return res.status(403).json({ error: 'Invitation does not belong to this organization' });
+    }
+    
+    // Only cancel pending invitations
+    if (invitationData.status !== 'pending') {
+      return res.status(400).json({ error: 'Can only cancel pending invitations' });
+    }
+    
+    // Update invitation status
+    await db.collection('invitations').doc(invitationId).update({
+      status: 'cancelled',
+      cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+      cancelledBy: req.user.uid,
+    });
+    
+    res.json({ message: 'Invitation cancelled successfully' });
+  } catch (error) {
+    console.error('Error cancelling invitation:', error);
+    res.status(500).json({ error: 'Failed to cancel invitation' });
   }
 });
 

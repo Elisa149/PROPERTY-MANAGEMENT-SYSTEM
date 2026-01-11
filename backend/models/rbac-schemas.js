@@ -181,7 +181,7 @@ const SYSTEM_ROLES = {
   SUPER_ADMIN: {
     name: 'super_admin',
     displayName: 'Super Administrator',
-    description: 'Full system access across all organizations',
+    description: 'System owner/provider with full access across all organizations. Manages the entire SaaS platform, all organizations, users, and system configuration.',
     level: 10,
     isSystemRole: true,
   },
@@ -195,7 +195,7 @@ const SYSTEM_ROLES = {
   PROPERTY_MANAGER: {
     name: 'property_manager',
     displayName: 'Property Manager',
-    description: 'Manages assigned properties and handles on-site maintenance',
+    description: 'Manages all organization properties and handles on-site maintenance',
     level: 6,
     isSystemRole: true,
   },
@@ -235,6 +235,14 @@ const SYSTEM_PERMISSIONS = [
   { name: 'users:create:organization', resource: 'users', action: 'create', scope: 'organization', description: 'Invite new users to organization', category: 'User Management' },
   { name: 'users:read:organization', resource: 'users', action: 'read', scope: 'organization', description: 'View all organization users', category: 'User Management' },
   { name: 'users:update:organization', resource: 'users', action: 'update', scope: 'organization', description: 'Edit organization user roles', category: 'User Management' },
+  { name: 'users:delete:organization', resource: 'users', action: 'delete', scope: 'organization', description: 'Remove users from organization', category: 'User Management' },
+  { name: 'users:status:organization', resource: 'users', action: 'status', scope: 'organization', description: 'Activate or suspend organization users', category: 'User Management' },
+  
+  // Role Management
+  { name: 'roles:create:organization', resource: 'roles', action: 'create', scope: 'organization', description: 'Create custom roles for organization', category: 'Role Management' },
+  { name: 'roles:read:organization', resource: 'roles', action: 'read', scope: 'organization', description: 'View organization roles', category: 'Role Management' },
+  { name: 'roles:update:organization', resource: 'roles', action: 'update', scope: 'organization', description: 'Update organization roles', category: 'Role Management' },
+  { name: 'roles:delete:organization', resource: 'roles', action: 'delete', scope: 'organization', description: 'Delete custom organization roles', category: 'Role Management' },
   
   // Reports
   { name: 'reports:read:organization', resource: 'reports', action: 'read', scope: 'organization', description: 'View organization reports', category: 'Reporting' },
@@ -243,6 +251,16 @@ const SYSTEM_PERMISSIONS = [
   // Maintenance Management
   { name: 'maintenance:create:assigned', resource: 'maintenance', action: 'create', scope: 'assigned', description: 'Create maintenance requests for assigned properties', category: 'Maintenance' },
   { name: 'maintenance:update:assigned', resource: 'maintenance', action: 'update', scope: 'assigned', description: 'Update maintenance status for assigned properties', category: 'Maintenance' },
+  
+  // Organization Management (Super Admin only)
+  { name: 'organizations:create:all', resource: 'organizations', action: 'create', scope: 'all', description: 'Create new organizations', category: 'Organization Management' },
+  { name: 'organizations:read:all', resource: 'organizations', action: 'read', scope: 'all', description: 'View all organizations', category: 'Organization Management' },
+  { name: 'organizations:update:all', resource: 'organizations', action: 'update', scope: 'all', description: 'Update any organization', category: 'Organization Management' },
+  { name: 'organizations:delete:all', resource: 'organizations', action: 'delete', scope: 'all', description: 'Delete organizations', category: 'Organization Management' },
+  
+  // System Management (Super Admin only)
+  { name: 'system:configure:all', resource: 'system', action: 'configure', scope: 'all', description: 'Configure system settings', category: 'System Management' },
+  { name: 'system:monitor:all', resource: 'system', action: 'monitor', scope: 'all', description: 'Monitor system health and analytics', category: 'System Management' },
 ];
 
 // Role Permission Mappings (SIMPLIFIED)
@@ -262,23 +280,30 @@ const ROLE_PERMISSIONS = {
     'users:create:organization',
     'users:read:organization',
     'users:update:organization',
+    'users:delete:organization',
+    'users:status:organization',
+    'roles:create:organization',
+    'roles:read:organization',
+    'roles:update:organization',
+    'roles:delete:organization',
     'reports:read:organization',
   ],
   
   property_manager: [
     // Property management (merged from property_manager + caretaker)
     'properties:create:organization',
-    'properties:read:assigned',
-    'properties:update:assigned',
+    'properties:read:organization',
+    'properties:update:organization',
+    'properties:delete:organization',
     // Tenant management
-    'tenants:create:assigned',
-    'tenants:read:assigned', 
-    'tenants:update:assigned',
+    'tenants:create:organization',
+    'tenants:read:organization', 
+    'tenants:update:organization',
     // Payment management
-    'payments:create:assigned',
-    'payments:read:assigned',
+    'payments:create:organization',
+    'payments:read:organization',
     // Reporting
-    'reports:read:assigned',
+    'reports:read:organization',
     // Maintenance (from caretaker)
     'maintenance:create:assigned',
     'maintenance:update:assigned',

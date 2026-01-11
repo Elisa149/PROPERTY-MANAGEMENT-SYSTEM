@@ -32,6 +32,7 @@ const authRoutes = require('./routes/auth');
 const tenantRoutes = require('./routes/tenants');
 const organizationsRoutes = require('./routes/organizations');
 const usersRoutes = require('./routes/users');
+const systemRoutes = require('./routes/system');
 
 // Rate limiting
 const limiter = rateLimit({
@@ -74,6 +75,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/organizations', organizationsRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/system', systemRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
