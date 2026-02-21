@@ -147,10 +147,20 @@ const OrganizationSettingsPage = () => {
       return;
     }
 
-    toast.info('User invitation feature coming soon. For now, use User Management to approve access requests.');
-    setInviteDialog(false);
-    setInviteEmail('');
-    setInviteRole('');
+    try {
+      await organizationsAPI.inviteUser(organizationId, {
+        email: inviteEmail,
+        roleId: inviteRole,
+        message: ''
+      });
+      toast.success('Invitation sent successfully');
+      setInviteDialog(false);
+      setInviteEmail('');
+      setInviteRole('');
+      queryClient.invalidateQueries(['organizationInvitations', organizationId]);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to send invitation');
+    }
   };
 
   if (!userRole || !['org_admin', 'super_admin'].includes(userRole.name)) {
@@ -496,7 +506,7 @@ const OrganizationSettingsPage = () => {
               >
                 {availableRoles.map((role) => (
                   <MenuItem key={role.id} value={role.id}>
-                    {role.name} - {role.description}
+                    {role.displayName || role.name} {role.description ? `- ${role.description}` : ''}
                   </MenuItem>
                 ))}
               </Select>

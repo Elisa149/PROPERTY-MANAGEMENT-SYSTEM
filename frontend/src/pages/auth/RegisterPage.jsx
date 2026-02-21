@@ -66,10 +66,10 @@ const RegisterPage = () => {
     
     try {
       await signup(data.email, data.password, data.displayName);
-      navigate('/app/dashboard');
+      // Navigate to /app, DashboardRedirect will handle the correct dashboard
+      navigate('/app');
     } catch (error) {
       setError(error.message || 'Failed to create account');
-    } finally {
       setLoading(false);
     }
   };
@@ -80,10 +80,10 @@ const RegisterPage = () => {
     
     try {
       await signInWithGoogle();
-      navigate('/app/dashboard');
+      // Navigate to /app, DashboardRedirect will handle the correct dashboard
+      navigate('/app');
     } catch (error) {
       setError(error.message || 'Failed to sign in with Google');
-    } finally {
       setLoading(false);
     }
   };

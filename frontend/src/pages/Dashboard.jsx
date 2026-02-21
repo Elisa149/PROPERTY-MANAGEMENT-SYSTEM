@@ -33,18 +33,23 @@ import { useAuth } from '../contexts/AuthContext';
 import PropertySelectorDialog from '../components/PropertySelectorDialog';
 import AnimatedProgressBar from '../components/common/AnimatedProgressBar';
 import AnimatedCounter from '../components/common/AnimatedCounter';
+import SystemAdminDashboardPage from './admin/SystemAdminDashboardPage';
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasRole } = useAuth();
   const [propertyDialog, setPropertyDialog] = React.useState(false);
 
-  // Fetch dashboard data
+  // Check if super admin (must be before hooks)
+  const isSuperAdmin = !!hasRole('super_admin');
+
+  // Fetch dashboard data (always call hooks, even for super admin)
   const {
     data: summary,
     isLoading: summaryLoading,
     error: summaryError,
   } = useQuery('dashboard-summary', paymentsAPI.getDashboardSummary, {
+    enabled: !isSuperAdmin, // Only fetch for non-super admins
     retry: 3,
     retryDelay: 1000,
     onError: (error) => {
@@ -55,7 +60,14 @@ const Dashboard = () => {
   const {
     data: propertiesData,
     isLoading: propertiesLoading,
-  } = useQuery('properties', propertiesAPI.getAll);
+  } = useQuery('properties', propertiesAPI.getAll, {
+    enabled: !isSuperAdmin, // Only fetch for non-super admins
+  });
+
+  // If user is super admin, show system admin dashboard (after all hooks)
+  if (isSuperAdmin) {
+    return <SystemAdminDashboardPage />;
+  }
 
   if (summaryLoading || propertiesLoading) {
     return <LoadingSpinner message="Loading dashboard..." />;
@@ -493,8 +505,8 @@ const Dashboard = () => {
                       <ListItemText
                         primary={property.name}
                         secondary={
-                          <Box>
-                            <Typography variant="body2" color="text.secondary">
+                          <React.Fragment>
+                            <Typography component="span" variant="body2" color="text.secondary" display="block">
                               {property.type === 'building' && property.buildingDetails 
                                 ? `${property.buildingDetails.totalRentableSpaces || 0} spaces`
                                 : property.type === 'land' && property.landDetails
@@ -502,7 +514,7 @@ const Dashboard = () => {
                                 : 'No spaces defined'
                               }
                             </Typography>
-                            <Typography variant="body2" color="success.main">
+                            <Typography component="span" variant="body2" color="success.main" display="block">
                               UGX {
                                 property.type === 'building' && property.buildingDetails
                                   ? (property.buildingDetails.floors?.reduce((total, floor) => {
@@ -514,7 +526,7 @@ const Dashboard = () => {
                                   : '0'
                               }/month
                             </Typography>
-                          </Box>
+                          </React.Fragment>
                         }
                       />
                       <ListItemSecondaryAction>

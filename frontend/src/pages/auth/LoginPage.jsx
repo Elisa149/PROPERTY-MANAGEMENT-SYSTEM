@@ -57,10 +57,10 @@ const LoginPage = () => {
     
     try {
       await signin(data.email, data.password);
-      navigate('/app/dashboard');
+      // Navigate to /app, DashboardRedirect will handle the correct dashboard
+      navigate('/app');
     } catch (error) {
       setError(error.message || 'Failed to sign in');
-    } finally {
       setLoading(false);
     }
   };
@@ -71,10 +71,10 @@ const LoginPage = () => {
     
     try {
       await signInWithGoogle();
-      navigate('/app/dashboard');
+      // Navigate to /app, DashboardRedirect will handle the correct dashboard
+      navigate('/app');
     } catch (error) {
       setError(error.message || 'Failed to sign in with Google');
-    } finally {
       setLoading(false);
     }
   };

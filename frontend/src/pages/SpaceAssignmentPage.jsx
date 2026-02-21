@@ -32,6 +32,8 @@ import {
   ListItemAvatar,
   ListItemText,
   ListItemSecondaryAction,
+  Backdrop,
+  CircularProgress,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -59,6 +61,8 @@ import toast from 'react-hot-toast';
 
 import { propertiesAPI, rentAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import SpaceEditDialog from '../components/SpaceEditDialog';
+import LeaseEditDialog from '../components/LeaseEditDialog';
 
 const SpaceAssignmentPage = () => {
   const { id } = useParams();
@@ -66,7 +70,12 @@ const SpaceAssignmentPage = () => {
   const queryClient = useQueryClient();
   
   const [assignmentDialog, setAssignmentDialog] = useState(false);
+  const [editSpaceDialog, setEditSpaceDialog] = useState(false);
+  const [editLeaseDialog, setEditLeaseDialog] = useState(false);
   const [selectedSpace, setSelectedSpace] = useState(null);
+  const [selectedLease, setSelectedLease] = useState(null);
+  const [selectedFloorIndex, setSelectedFloorIndex] = useState(null);
+  const [selectedSpaceIndex, setSelectedSpaceIndex] = useState(null);
   const [tenantForm, setTenantForm] = useState({
     tenantName: '',
     tenantEmail: '',
@@ -98,7 +107,7 @@ const SpaceAssignmentPage = () => {
   });
 
   // Fetch existing rent records for this property
-  const { data: rentData } = useQuery(
+  const { data: rentData, isFetching: rentFetching } = useQuery(
     ['property-rent', id],
     () => rentAPI.getByProperty(id),
     { enabled: !!id }
@@ -117,6 +126,92 @@ const SpaceAssignmentPage = () => {
       toast.error(error.response?.data?.error || 'Failed to assign space');
     },
   });
+
+  // Update property mutation for space edits
+  const updatePropertyMutation = useMutation(
+    ({ id, data }) => propertiesAPI.update(id, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['property', id]);
+        queryClient.invalidateQueries('properties');
+      },
+      onError: (error) => {
+        throw error; // Let the dialog handle the error
+      },
+    }
+  );
+
+  // Update lease mutation with optimistic updates
+  const updateLeaseMutation = useMutation(
+    ({ id, data }) => rentAPI.update(id, data),
+    {
+      // Optimistic update - update UI immediately before server confirms
+      onMutate: async ({ id: leaseId, data: newData }) => {
+        // Cancel any outgoing refetches to avoid overwriting optimistic update
+        await queryClient.cancelQueries(['property-rent', id]);
+        await queryClient.cancelQueries('rent');
+        
+        // Snapshot the previous value for rollback
+        const previousRent = queryClient.getQueryData(['property-rent', id]);
+        const previousAllRent = queryClient.getQueryData('rent');
+        
+        // Optimistically update to the new value
+        queryClient.setQueryData(['property-rent', id], (old) => {
+          if (!old?.data?.rentRecords) return old;
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              rentRecords: old.data.rentRecords.map(rent => 
+                rent.id === leaseId ? { ...rent, ...newData } : rent
+              ),
+            },
+          };
+        });
+        
+        queryClient.setQueryData('rent', (old) => {
+          if (!old?.data?.rentRecords) return old;
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              rentRecords: old.data.rentRecords.map(rent => 
+                rent.id === leaseId ? { ...rent, ...newData } : rent
+              ),
+            },
+          };
+        });
+        
+        // Return context with snapshot for rollback
+        return { previousRent, previousAllRent };
+      },
+      onSuccess: () => {
+        // Invalidate to ensure server data is fetched
+        queryClient.invalidateQueries(['property-rent', id]);
+        queryClient.invalidateQueries(['property', id]);
+        queryClient.invalidateQueries('rent');
+        queryClient.invalidateQueries('properties');
+        toast.success('Lease updated successfully!');
+        setEditLeaseDialog(false);
+        setSelectedLease(null);
+      },
+      onError: (error, variables, context) => {
+        // Rollback to previous state on error
+        if (context?.previousRent) {
+          queryClient.setQueryData(['property-rent', id], context.previousRent);
+        }
+        if (context?.previousAllRent) {
+          queryClient.setQueryData('rent', context.previousAllRent);
+        }
+        toast.error(error.response?.data?.error || 'Failed to update lease');
+      },
+      // Always refetch after error or success to ensure consistency
+      onSettled: () => {
+        queryClient.invalidateQueries(['property-rent', id]);
+        queryClient.invalidateQueries('rent');
+      },
+    }
+  );
 
   const resetForm = () => {
     setTenantForm({
@@ -168,6 +263,201 @@ const SpaceAssignmentPage = () => {
       agreementType: 'standard',
     });
     setAssignmentDialog(true);
+  };
+
+  const openEditSpaceDialog = (space, floorIndex, spaceIndex) => {
+    setSelectedSpace(space);
+    setSelectedFloorIndex(floorIndex);
+    setSelectedSpaceIndex(spaceIndex);
+    setEditSpaceDialog(true);
+  };
+
+  const openEditLeaseDialog = (space, lease) => {
+    setSelectedSpace(space);
+    setSelectedLease(lease);
+    setEditLeaseDialog(true);
+  };
+
+  const handleUpdateLease = async (updatedLeaseData) => {
+    if (!selectedLease) {
+      toast.error('No lease selected');
+      return;
+    }
+
+    try {
+      // Ensure all required fields are included in the update
+      const completeUpdateData = {
+        propertyId: selectedLease.propertyId || property?.id,
+        spaceId: selectedLease.spaceId || selectedSpace?.spaceId || '',
+        spaceName: selectedLease.spaceName || selectedSpace?.spaceName || '',
+        ...updatedLeaseData,
+        // Ensure numeric fields are numbers
+        monthlyRent: Number(updatedLeaseData.monthlyRent) || 0,
+        baseRent: Number(updatedLeaseData.baseRent || updatedLeaseData.monthlyRent) || 0,
+        deposit: Number(updatedLeaseData.deposit) || 0,
+        securityDeposit: Number(updatedLeaseData.securityDeposit) || 0,
+        paymentDueDate: Number(updatedLeaseData.paymentDueDate) || 1,
+        rentEscalation: Number(updatedLeaseData.rentEscalation) || 0,
+        leaseDurationMonths: Number(updatedLeaseData.leaseDuration || updatedLeaseData.leaseDurationMonths) || 12,
+        utilitiesAmount: Number(updatedLeaseData.utilitiesAmount) || 0,
+      };
+
+      console.log('🔄 Updating lease with data:', completeUpdateData);
+
+      await updateLeaseMutation.mutateAsync({
+        id: selectedLease.id,
+        data: completeUpdateData,
+      });
+    } catch (error) {
+      console.error('Error updating lease:', error);
+    }
+  };
+
+  const handleUpdateSpace = async (updatedSpaceData) => {
+    if (!property) {
+      toast.error('Property data not available');
+      return;
+    }
+
+    try {
+      console.log('🔧 Updating space with data:', updatedSpaceData);
+      
+      // Clone property data to avoid mutations
+      const propertyClone = JSON.parse(JSON.stringify(property));
+
+      if (property.type === 'building') {
+        // Update building space with only the changed fields
+        if (selectedFloorIndex !== null && selectedSpaceIndex !== null) {
+          if (!propertyClone.buildingDetails?.floors?.[selectedFloorIndex]?.spaces?.[selectedSpaceIndex]) {
+            toast.error('Space not found in property data');
+            return;
+          }
+          
+          // Merge only the updated fields
+          const currentSpace = propertyClone.buildingDetails.floors[selectedFloorIndex].spaces[selectedSpaceIndex];
+          propertyClone.buildingDetails.floors[selectedFloorIndex].spaces[selectedSpaceIndex] = {
+            ...currentSpace,
+            ...updatedSpaceData,
+          };
+        }
+      } else if (property.type === 'land') {
+        // Update land squatter with only the changed fields
+        if (selectedSpaceIndex !== null) {
+          if (!propertyClone.landDetails?.squatters?.[selectedSpaceIndex]) {
+            toast.error('Space not found in property data');
+            return;
+          }
+          
+          // Merge only the updated fields
+          const currentSquatter = propertyClone.landDetails.squatters[selectedSpaceIndex];
+          propertyClone.landDetails.squatters[selectedSpaceIndex] = {
+            ...currentSquatter,
+            ...updatedSpaceData,
+          };
+        }
+      }
+
+      // Prepare clean property data for update
+      const cleanPropertyData = {
+        name: propertyClone.name,
+        type: propertyClone.type,
+        organizationId: propertyClone.organizationId,
+        location: propertyClone.location,
+        establishmentDate: propertyClone.establishmentDate,
+        caretakerName: propertyClone.caretakerName,
+        caretakerPhone: propertyClone.caretakerPhone,
+        plotNumber: propertyClone.plotNumber || '',
+        ownershipType: propertyClone.ownershipType,
+        description: propertyClone.description || '',
+        amenities: propertyClone.amenities || [],
+        images: propertyClone.images || [],
+        status: propertyClone.status || 'vacant',
+      };
+
+      // Add building or land details
+      if (property.type === 'building') {
+        cleanPropertyData.buildingDetails = propertyClone.buildingDetails;
+      } else if (property.type === 'land') {
+        cleanPropertyData.landDetails = propertyClone.landDetails;
+      }
+
+      // Helper function to convert Firestore Timestamp or any date to ISO string
+      const convertToISODate = (dateValue) => {
+        if (!dateValue) return null;
+        
+        // Handle Firestore Timestamp objects
+        if (dateValue._seconds !== undefined) {
+          return new Date(dateValue._seconds * 1000).toISOString();
+        }
+        
+        // Handle Date objects
+        if (dateValue instanceof Date) {
+          return dateValue.toISOString();
+        }
+        
+        // Handle string dates
+        if (typeof dateValue === 'string') {
+          const date = new Date(dateValue);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString();
+          }
+        }
+        
+        // Try to parse as date
+        try {
+          const date = new Date(dateValue);
+          if (!isNaN(date.getTime())) {
+            return date.toISOString();
+          }
+        } catch (e) {
+          console.error('Could not convert date:', dateValue, e);
+        }
+        
+        return null;
+      };
+
+      // Convert establishmentDate to ISO format for validation
+      if (cleanPropertyData.establishmentDate) {
+        const isoDate = convertToISODate(cleanPropertyData.establishmentDate);
+        if (isoDate) {
+          cleanPropertyData.establishmentDate = isoDate;
+        }
+      }
+
+      // Convert squatter agreement dates for land properties
+      if (cleanPropertyData.type === 'land' && cleanPropertyData.landDetails?.squatters) {
+        cleanPropertyData.landDetails.squatters = cleanPropertyData.landDetails.squatters.map(squatter => {
+          const cleanSquatter = { ...squatter };
+          if (cleanSquatter.agreementDate) {
+            const isoDate = convertToISODate(cleanSquatter.agreementDate);
+            if (isoDate) {
+              cleanSquatter.agreementDate = isoDate;
+            }
+          }
+          return cleanSquatter;
+        });
+      }
+
+      console.log('📤 Sending property update to backend');
+      
+      await updatePropertyMutation.mutateAsync({ 
+        id: property.id, 
+        data: cleanPropertyData 
+      });
+      
+      setEditSpaceDialog(false);
+      setSelectedSpace(null);
+      setSelectedFloorIndex(null);
+      setSelectedSpaceIndex(null);
+    } catch (error) {
+      console.error('❌ Error updating space:', error);
+      if (error.response?.status === 403) {
+        toast.error('You do not have permission to edit this property. Please contact your administrator.');
+      } else {
+        toast.error(error.response?.data?.error || 'Failed to update space. Please try again.');
+      }
+      throw error;
+    }
   };
 
   // Calculate lease end date based on period type and duration
@@ -295,6 +585,23 @@ const SpaceAssignmentPage = () => {
 
   return (
     <Box>
+      {/* Subtle loading overlay during background refetch */}
+      <Backdrop
+        open={rentFetching && !propertyLoading}
+        sx={{ 
+          color: '#fff', 
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        }}
+      >
+        <Box sx={{ textAlign: 'center' }}>
+          <CircularProgress color="inherit" size={40} />
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            Refreshing data...
+          </Typography>
+        </Box>
+      </Backdrop>
+
       {/* Header */}
       <Box sx={{ mb: 4, display: 'flex', alignItems: 'center', gap: 2 }}>
         <IconButton onClick={() => navigate(`/app/properties/${id}`)}>
@@ -441,7 +748,15 @@ const SpaceAssignmentPage = () => {
                             )}
                           </CardContent>
                           
-                          <CardActions>
+                          <CardActions sx={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                            <IconButton
+                              size="small"
+                              onClick={() => openEditSpaceDialog(space, floorIndex, spaceIndex)}
+                              sx={{ ml: 'auto' }}
+                              title="Edit Space"
+                            >
+                              <Edit fontSize="small" />
+                            </IconButton>
                             {spaceStatus === 'vacant' ? (
                               <Button
                                 size="small"
@@ -452,26 +767,34 @@ const SpaceAssignmentPage = () => {
                               >
                                 Assign Tenant
                               </Button>
-                            ) : (
-                              <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  startIcon={<Edit />}
-                                  fullWidth
-                                >
-                                  Edit Assignment
-                                </Button>
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  color="error"
-                                  startIcon={<Cancel />}
-                                >
-                                  Terminate
-                                </Button>
-                              </Box>
-                            )}
+                      ) : (
+                        <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<Edit />}
+                            fullWidth
+                            onClick={() => {
+                              const lease = rentData?.rentRecords?.find(r => r.spaceId === space.spaceId);
+                              if (lease) {
+                                openEditLeaseDialog(space, lease);
+                              } else {
+                                toast.error('Lease record not found');
+                              }
+                            }}
+                          >
+                            Edit Assignment
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            startIcon={<Cancel />}
+                          >
+                            Terminate
+                          </Button>
+                        </Box>
+                      )}
                           </CardActions>
                         </Card>
                       </Grid>
@@ -558,7 +881,15 @@ const SpaceAssignmentPage = () => {
                       )}
                     </CardContent>
                     
-                    <CardActions>
+                    <CardActions sx={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                      <IconButton
+                        size="small"
+                        onClick={() => openEditSpaceDialog(squatter, null, squatterIndex)}
+                        sx={{ ml: 'auto' }}
+                        title="Edit Space"
+                      >
+                        <Edit fontSize="small" />
+                      </IconButton>
                       {!tenant ? (
                         <Button
                           size="small"
@@ -576,6 +907,14 @@ const SpaceAssignmentPage = () => {
                             variant="outlined"
                             startIcon={<Edit />}
                             fullWidth
+                            onClick={() => {
+                              const lease = rentData?.rentRecords?.find(r => r.squatterId === squatter.squatterId);
+                              if (lease) {
+                                openEditLeaseDialog(squatter, lease);
+                              } else {
+                                toast.error('Lease record not found');
+                              }
+                            }}
                           >
                             Edit Lease
                           </Button>
@@ -910,6 +1249,33 @@ const SpaceAssignmentPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Edit Space Dialog */}
+      <SpaceEditDialog
+        open={editSpaceDialog}
+        onClose={() => {
+          setEditSpaceDialog(false);
+          setSelectedSpace(null);
+          setSelectedFloorIndex(null);
+          setSelectedSpaceIndex(null);
+        }}
+        space={selectedSpace}
+        propertyType={property?.type}
+        onUpdate={handleUpdateSpace}
+      />
+
+      {/* Edit Lease Dialog */}
+      <LeaseEditDialog
+        open={editLeaseDialog}
+        onClose={() => {
+          setEditLeaseDialog(false);
+          setSelectedLease(null);
+          setSelectedSpace(null);
+        }}
+        lease={selectedLease}
+        space={selectedSpace}
+        onSave={handleUpdateLease}
+      />
     </Box>
   );
 };

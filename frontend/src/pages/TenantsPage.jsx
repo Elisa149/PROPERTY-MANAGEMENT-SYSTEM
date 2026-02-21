@@ -31,6 +31,8 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Backdrop,
+  CircularProgress,
 } from '@mui/material';
 import {
   People,
@@ -57,9 +59,10 @@ import { format, differenceInDays, addMonths, addYears } from 'date-fns';
 import toast from 'react-hot-toast';
 import { useMutation, useQueryClient } from 'react-query';
 
-import { propertiesAPI, rentAPI } from '../services/api';
+import { propertiesAPI, rentAPI, tenantsAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import PropertySelectorDialog from '../components/PropertySelectorDialog';
+import TenantEditDialog from '../components/TenantEditDialog';
 
 const TenantsPage = () => {
   const navigate = useNavigate();
@@ -70,6 +73,7 @@ const TenantsPage = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [propertyDialog, setPropertyDialog] = useState(false);
   const [renewDialog, setRenewDialog] = useState(false);
+  const [editTenantDialog, setEditTenantDialog] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState(null);
   const [newLeaseEnd, setNewLeaseEnd] = useState('');
   const [renewalPeriod, setRenewalPeriod] = useState('12'); // months
@@ -85,13 +89,38 @@ const TenantsPage = () => {
   const {
     data: rentData,
     isLoading: rentLoading,
+    isFetching: rentFetching,
     error: rentError,
   } = useQuery('rent', rentAPI.getAll);
 
-  // Lease renewal mutation
+  // Lease renewal mutation with optimistic updates
   const renewLeaseMutation = useMutation(
     ({ rentId, updatedData }) => rentAPI.update(rentId, updatedData),
     {
+      // Optimistic update - update UI immediately
+      onMutate: async ({ rentId, updatedData }) => {
+        // Cancel outgoing refetches
+        await queryClient.cancelQueries('rent');
+        
+        // Snapshot previous value
+        const previousRent = queryClient.getQueryData('rent');
+        
+        // Optimistically update
+        queryClient.setQueryData('rent', (old) => {
+          if (!old?.data?.rentRecords) return old;
+          return {
+            ...old,
+            data: {
+              ...old.data,
+              rentRecords: old.data.rentRecords.map(rent => 
+                rent.id === rentId ? { ...rent, ...updatedData, status: 'active' } : rent
+              ),
+            },
+          };
+        });
+        
+        return { previousRent };
+      },
       onSuccess: () => {
         toast.success('Lease renewed successfully!');
         queryClient.invalidateQueries('rent');
@@ -100,8 +129,30 @@ const TenantsPage = () => {
         setNewLeaseEnd('');
         setRenewalPeriod('12');
       },
-      onError: (error) => {
+      onError: (error, variables, context) => {
+        // Rollback on error
+        if (context?.previousRent) {
+          queryClient.setQueryData('rent', context.previousRent);
+        }
         toast.error(error.response?.data?.error || 'Failed to renew lease');
+      },
+      onSettled: () => {
+        queryClient.invalidateQueries('rent');
+      },
+    }
+  );
+
+  // Update tenant mutation
+  const updateTenantMutation = useMutation(
+    ({ id, data }) => tenantsAPI.update(id, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('rent'); // Refresh tenant list
+        setEditTenantDialog(false);
+        setSelectedTenant(null);
+      },
+      onError: (error) => {
+        throw error; // Let the dialog handle the error
       },
     }
   );
@@ -291,6 +342,15 @@ const TenantsPage = () => {
     setRenewDialog(true);
   };
 
+  const handleEditTenant = (tenant) => {
+    setSelectedTenant(tenant);
+    setEditTenantDialog(true);
+  };
+
+  const handleUpdateTenant = async (id, data) => {
+    return updateTenantMutation.mutateAsync({ id, data });
+  };
+
   const handleRenewalPeriodChange = (period) => {
     setRenewalPeriod(period);
     const baseDate = selectedTenant?.isExpired && selectedTenant?.leaseEnd 
@@ -378,6 +438,23 @@ const TenantsPage = () => {
 
   return (
     <Box>
+      {/* Subtle loading overlay during background refetch */}
+      <Backdrop
+        open={rentFetching && !rentLoading}
+        sx={{ 
+          color: '#fff', 
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        }}
+      >
+        <Box sx={{ textAlign: 'center' }}>
+          <CircularProgress color="inherit" size={40} />
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            Refreshing data...
+          </Typography>
+        </Box>
+      </Backdrop>
+
       {/* Header */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
@@ -730,6 +807,19 @@ const TenantsPage = () => {
                 {/* Actions */}
                 <TableCell>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Tooltip title="Edit Tenant Information">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<Edit />}
+                        onClick={() => handleEditTenant(tenant)}
+                        fullWidth
+                        color="primary"
+                      >
+                        Edit Tenant
+                      </Button>
+                    </Tooltip>
+
                     {(tenant.isExpired || tenant.isExpiringSoon) && (
                       <Tooltip title={tenant.isExpired ? "Renew Expired Lease" : "Renew Lease (Expiring Soon)"}>
                         <Button
@@ -917,6 +1007,17 @@ const TenantsPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Edit Tenant Dialog */}
+      <TenantEditDialog
+        open={editTenantDialog}
+        onClose={() => {
+          setEditTenantDialog(false);
+          setSelectedTenant(null);
+        }}
+        tenant={selectedTenant}
+        onUpdate={handleUpdateTenant}
+      />
     </Box>
   );
 };

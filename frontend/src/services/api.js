@@ -1,12 +1,12 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
 
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -188,9 +188,32 @@ export const organizationsAPI = {
   update: (id, data) => api.put(`/organizations/${id}`, data),
   delete: (id) => api.delete(`/organizations/${id}`),
   getRoles: (id) => api.get(`/organizations/${id}/roles`),
+  createRole: (orgId, data) => api.post(`/organizations/${orgId}/roles`, data),
+  updateRole: (orgId, roleId, data) => api.put(`/organizations/${orgId}/roles/${roleId}`, data),
+  deleteRole: (orgId, roleId) => api.delete(`/organizations/${orgId}/roles/${roleId}`),
   getUsers: (id) => api.get(`/organizations/${id}/users`),
   updateUserRole: (orgId, userId, roleId) => api.put(`/organizations/${orgId}/users/${userId}/role`, { roleId }),
+  updateUserStatus: (orgId, userId, status) => api.put(`/organizations/${orgId}/users/${userId}/status`, { status }),
   removeUser: (orgId, userId) => api.delete(`/organizations/${orgId}/users/${userId}`),
+  inviteUser: (orgId, data) => api.post(`/organizations/${orgId}/invite`, data),
+  getInvitations: (orgId, status) => {
+    const query = status ? `?status=${status}` : '';
+    return api.get(`/organizations/${orgId}/invitations${query}`);
+  },
+  cancelInvitation: (orgId, invitationId) => api.put(`/organizations/${orgId}/invitations/${invitationId}/cancel`),
+};
+
+export const systemAPI = {
+  getSettings: () => api.get('/system/settings'),
+  updateSettings: (data) => api.put('/system/settings', data),
+  getHealth: () => api.get('/system/health'),
+  toggleMaintenance: (enabled, message) => api.post('/system/maintenance', { enabled, message }),
+  getStatistics: (startDate, endDate) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    return api.get(`/system/statistics${params.toString() ? `?${params.toString()}` : ''}`);
+  },
 };
 
 export default api;

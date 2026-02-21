@@ -39,6 +39,20 @@ import GlobalUserManagementPage from './pages/admin/GlobalUserManagementPage';
 import SystemSettingsPage from './pages/admin/SystemSettingsPage';
 import GlobalAnalyticsPage from './pages/admin/GlobalAnalyticsPage';
 import GlobalRentManagementPage from './pages/admin/GlobalRentManagementPage';
+import AdminSpacesPage from './pages/admin/AdminSpacesPage';
+
+// Dashboard redirect component - redirects to appropriate dashboard based on role
+const DashboardRedirect = () => {
+  const { isSuperAdmin, loading, userRole } = useAuth();
+  
+  // Wait for profile to load before redirecting
+  if (loading || !userRole) {
+    return <LoadingSpinner />;
+  }
+  
+  const dashboardPath = isSuperAdmin() ? '/app/admin/system' : '/app/dashboard';
+  return <Navigate to={dashboardPath} replace />;
+};
 
 // Protected route wrapper with RBAC
 const ProtectedRoute = ({ children }) => {
@@ -74,14 +88,15 @@ const ProtectedRoute = ({ children }) => {
 
 // Public route wrapper (redirect to dashboard if already authenticated)
 const PublicRoute = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, isSuperAdmin } = useAuth();
   
   if (loading) {
     return <LoadingSpinner />;
   }
   
   if (user) {
-    return <Navigate to="/app/dashboard" replace />;
+    const dashboardPath = isSuperAdmin() ? '/app/admin/system' : '/app/dashboard';
+    return <Navigate to={dashboardPath} replace />;
   }
   
   return children;
@@ -135,7 +150,7 @@ function App() {
           }
         >
           {/* Dashboard */}
-          <Route index element={<Navigate to="/app/dashboard" replace />} />
+          <Route index element={<DashboardRedirect />} />
           <Route path="dashboard" element={<Dashboard />} />
 
           {/* Properties */}
@@ -231,6 +246,42 @@ function App() {
                  <Route path="admin/rent" element={
                    <RoleGuard requiredRoles={['super_admin']}>
                      <GlobalRentManagementPage />
+                   </RoleGuard>
+                 } />
+                 {/* Admin Spaces - Super Admin only */}
+                 <Route path="admin/spaces" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <AdminSpacesPage />
+                   </RoleGuard>
+                 } />
+                 {/* Admin Tenants - Super Admin only */}
+                 <Route path="admin/tenants" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <TenantsPage />
+                   </RoleGuard>
+                 } />
+                 {/* Admin Payments - Super Admin only */}
+                 <Route path="admin/payments" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <PaymentsPage />
+                   </RoleGuard>
+                 } />
+                 {/* Admin Invoices - Super Admin only */}
+                 <Route path="admin/invoices" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <InvoicesPage />
+                   </RoleGuard>
+                 } />
+                 {/* Admin Properties Overview - Super Admin only */}
+                 <Route path="admin/properties-overview" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <PropertiesOverviewPage />
+                   </RoleGuard>
+                 } />
+                 {/* Admin Properties - Super Admin only (uses PropertiesPage with grouping) */}
+                 <Route path="admin/properties" element={
+                   <RoleGuard requiredRoles={['super_admin']}>
+                     <PropertiesPage />
                    </RoleGuard>
                  } />
         </Route>

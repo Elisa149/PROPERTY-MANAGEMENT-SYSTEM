@@ -26,6 +26,11 @@ import {
   Grid,
   Card,
   CardContent,
+  Menu,
+  Checkbox,
+  Tooltip,
+  CircularProgress,
+  Divider,
 } from '@mui/material';
 import {
   People,
@@ -35,6 +40,9 @@ import {
   FilterList,
   CheckCircle,
   Cancel,
+  Block,
+  PersonRemove,
+  MoreVert,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { usersAPI, organizationsAPI } from '../../services/api';
@@ -49,9 +57,13 @@ const GlobalUserManagementPage = () => {
   const [filterOrganization, setFilterOrganization] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedUsers, setSelectedUsers] = useState([]); // For bulk operations
 
   if (!hasRole('super_admin')) {
     return (
@@ -127,6 +139,39 @@ const GlobalUserManagementPage = () => {
     }
   );
 
+  // Update user status mutation
+  const updateUserStatusMutation = useMutation(
+    ({ userId, orgId, status }) => organizationsAPI.updateUserStatus(orgId, userId, status),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('allUsers');
+        toast.success(`User status updated to ${selectedStatus} successfully`);
+        setStatusDialogOpen(false);
+        setSelectedUser(null);
+        setSelectedStatus('');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to update user status');
+      },
+    }
+  );
+
+  // Remove user from organization mutation
+  const removeUserMutation = useMutation(
+    ({ userId, orgId }) => organizationsAPI.removeUser(orgId, userId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('allUsers');
+        toast.success('User removed from organization successfully');
+        setRemoveDialogOpen(false);
+        setSelectedUser(null);
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to remove user');
+      },
+    }
+  );
+
   const handleEditUser = (user) => {
     setSelectedUser(user);
     setSelectedOrgId(user.organizationId || '');
@@ -149,6 +194,58 @@ const GlobalUserManagementPage = () => {
       orgId: selectedOrgId,
       roleId: selectedRoleId,
     });
+  };
+
+  const handleStatusChange = (user) => {
+    setSelectedUser(user);
+    setSelectedStatus(user.status || 'pending');
+    setStatusDialogOpen(true);
+  };
+
+  const handleUpdateStatus = () => {
+    if (!selectedUser?.organizationId) {
+      toast.error('User is not assigned to an organization');
+      return;
+    }
+    updateUserStatusMutation.mutate({
+      userId: selectedUser.id,
+      orgId: selectedUser.organizationId,
+      status: selectedStatus,
+    });
+  };
+
+  const handleRemoveUser = (user) => {
+    if (!user.organizationId) {
+      toast.error('User is not assigned to an organization');
+      return;
+    }
+    setSelectedUser(user);
+    setRemoveDialogOpen(true);
+  };
+
+  const handleConfirmRemove = () => {
+    if (!selectedUser?.organizationId) {
+      toast.error('User is not assigned to an organization');
+      return;
+    }
+    removeUserMutation.mutate({
+      userId: selectedUser.id,
+      orgId: selectedUser.organizationId,
+    });
+  };
+
+  const handleSelectUser = (userId) => {
+    setSelectedUsers((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedUsers.length === filteredUsers.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(filteredUsers.map((u) => u.id));
+    }
   };
 
   const getStatusColor = (status) => {
@@ -324,11 +421,42 @@ const GlobalUserManagementPage = () => {
         </Grid>
       </Paper>
 
+      {/* Bulk Actions Bar */}
+      {selectedUsers.length > 0 && (
+        <Paper sx={{ p: 2, mb: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+              {selectedUsers.length} user{selectedUsers.length > 1 ? 's' : ''} selected
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                size="small"
+                variant="contained"
+                color="secondary"
+                onClick={() => setSelectedUsers([])}
+              >
+                Clear Selection
+              </Button>
+              <Button size="small" variant="contained" color="secondary" disabled>
+                Bulk Actions (Coming Soon)
+              </Button>
+            </Box>
+          </Box>
+        </Paper>
+      )}
+
       {/* Users Table */}
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  indeterminate={selectedUsers.length > 0 && selectedUsers.length < filteredUsers.length}
+                  checked={filteredUsers.length > 0 && selectedUsers.length === filteredUsers.length}
+                  onChange={handleSelectAll}
+                />
+              </TableCell>
               <TableCell>User</TableCell>
               <TableCell>Email</TableCell>
               <TableCell>Organization</TableCell>
@@ -340,7 +468,7 @@ const GlobalUserManagementPage = () => {
           <TableBody>
             {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 4 }}>
+                <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
                   <Typography color="text.secondary">
                     {searchTerm || filterOrganization || filterStatus
                       ? 'No users match the filters'
@@ -350,7 +478,13 @@ const GlobalUserManagementPage = () => {
               </TableRow>
             ) : (
               filteredUsers.map((user) => (
-                <TableRow key={user.id} hover>
+                <TableRow key={user.id} hover selected={selectedUsers.includes(user.id)}>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={selectedUsers.includes(user.id)}
+                      onChange={() => handleSelectUser(user.id)}
+                    />
+                  </TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                       <Avatar sx={{ bgcolor: 'primary.main' }}>
@@ -396,14 +530,39 @@ const GlobalUserManagementPage = () => {
                     />
                   </TableCell>
                   <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => handleEditUser(user)}
-                      title="Edit User"
-                    >
-                      <Edit />
-                    </IconButton>
+                    <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                      <Tooltip title="Edit Role">
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => handleEditUser(user)}
+                        >
+                          <Edit />
+                        </IconButton>
+                      </Tooltip>
+                      {user.organizationId && (
+                        <>
+                          <Tooltip title="Change Status">
+                            <IconButton
+                              size="small"
+                              color={user.status === 'active' ? 'warning' : 'success'}
+                              onClick={() => handleStatusChange(user)}
+                            >
+                              {user.status === 'active' ? <Block /> : <CheckCircle />}
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Remove from Organization">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleRemoveUser(user)}
+                            >
+                              <PersonRemove />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))
@@ -491,6 +650,101 @@ const GlobalUserManagementPage = () => {
             disabled={!selectedOrgId || !selectedRoleId || updateUserRoleMutation.isLoading}
           >
             {updateUserRoleMutation.isLoading ? 'Updating...' : 'Update User'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Update Status Dialog */}
+      <Dialog open={statusDialogOpen} onClose={() => setStatusDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Update User Status</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            {selectedUser && (
+              <>
+                <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Avatar sx={{ bgcolor: 'primary.main' }}>
+                    {getInitials(selectedUser.displayName)}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      {selectedUser.displayName || selectedUser.email}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {selectedUser.email}
+                    </Typography>
+                    <Chip
+                      label={`Current: ${selectedUser.status || 'pending'}`}
+                      color={getStatusColor(selectedUser.status)}
+                      size="small"
+                      sx={{ mt: 1 }}
+                    />
+                  </Box>
+                </Box>
+
+                <FormControl fullWidth>
+                  <InputLabel htmlFor="user-status">Status</InputLabel>
+                  <Select
+                    id="user-status"
+                    value={selectedStatus}
+                    label="Status"
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                  >
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="inactive">Inactive</MenuItem>
+                    <MenuItem value="suspended">Suspended</MenuItem>
+                    <MenuItem value="pending">Pending</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  <Typography variant="caption">
+                    Changing status to "suspended" will prevent the user from accessing the system.
+                    "Inactive" users cannot log in but their data is preserved.
+                  </Typography>
+                </Alert>
+              </>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStatusDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleUpdateStatus}
+            variant="contained"
+            disabled={!selectedStatus || updateUserStatusMutation.isLoading}
+          >
+            {updateUserStatusMutation.isLoading ? (
+              <CircularProgress size={24} />
+            ) : (
+              'Update Status'
+            )}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Remove User Dialog */}
+      <Dialog open={removeDialogOpen} onClose={() => setRemoveDialogOpen(false)}>
+        <DialogTitle>Remove User from Organization</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            This will remove the user from their organization. They will need to be re-invited to join again.
+          </Alert>
+          {selectedUser && (
+            <Typography>
+              Are you sure you want to remove <strong>{selectedUser.displayName || selectedUser.email}</strong> from{' '}
+              <strong>{selectedUser.organization?.name || 'their organization'}</strong>?
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemoveDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleConfirmRemove}
+            variant="contained"
+            color="error"
+            disabled={removeUserMutation.isLoading}
+          >
+            {removeUserMutation.isLoading ? <CircularProgress size={24} /> : 'Remove User'}
           </Button>
         </DialogActions>
       </Dialog>

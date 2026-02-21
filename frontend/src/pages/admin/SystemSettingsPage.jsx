@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -23,10 +23,27 @@ import {
   Backup,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
+import { systemAPI } from '../../services/api';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
+import LoadingSpinner from '../../components/common/LoadingSpinner';
 import toast from 'react-hot-toast';
 
 const SystemSettingsPage = () => {
   const { hasRole } = useAuth();
+  const queryClient = useQueryClient();
+  
+  // Fetch system settings
+  const {
+    data: settingsData,
+    isLoading: settingsLoading,
+    error: settingsError,
+  } = useQuery('systemSettings', systemAPI.getSettings, {
+    retry: 2,
+    onError: (error) => {
+      toast.error(error.response?.data?.error || 'Failed to load system settings');
+    },
+  });
+
   const [settings, setSettings] = useState({
     systemName: 'Property Management System',
     systemVersion: '1.0.0',
@@ -44,6 +61,24 @@ const SystemSettingsPage = () => {
     defaultTimezone: 'Africa/Kampala',
   });
 
+  // Update settings when fetched
+  useEffect(() => {
+    if (settingsData?.data?.settings) {
+      setSettings(settingsData.data.settings);
+    }
+  }, [settingsData]);
+
+  // Update settings mutation
+  const updateSettingsMutation = useMutation(systemAPI.updateSettings, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('systemSettings');
+      toast.success('System settings saved successfully');
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.error || 'Failed to save system settings');
+    },
+  });
+
   if (!hasRole('super_admin')) {
     return (
       <Box sx={{ p: 3 }}>
@@ -56,9 +91,34 @@ const SystemSettingsPage = () => {
   }
 
   const handleSave = () => {
-    // TODO: Implement API call to save system settings
-    toast.success('System settings saved successfully');
+    updateSettingsMutation.mutate(settings);
   };
+
+  const handleMaintenanceToggle = async (enabled) => {
+    try {
+      await systemAPI.toggleMaintenance(enabled, 'System is under maintenance. Please try again later.');
+      queryClient.invalidateQueries('systemSettings');
+      toast.success(`Maintenance mode ${enabled ? 'enabled' : 'disabled'} successfully`);
+      setSettings({ ...settings, maintenanceMode: enabled });
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to toggle maintenance mode');
+    }
+  };
+
+  if (settingsLoading) {
+    return <LoadingSpinner message="Loading system settings..." />;
+  }
+
+  if (settingsError) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          <Typography variant="h6">Error Loading Settings</Typography>
+          <Typography>{settingsError.message || 'Failed to load system settings'}</Typography>
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -210,9 +270,7 @@ const SystemSettingsPage = () => {
                   control={
                     <Switch
                       checked={settings.maintenanceMode}
-                      onChange={(e) =>
-                        setSettings({ ...settings, maintenanceMode: e.target.checked })
-                      }
+                      onChange={(e) => handleMaintenanceToggle(e.target.checked)}
                     />
                   }
                   label="Maintenance Mode"
@@ -310,11 +368,23 @@ const SystemSettingsPage = () => {
           </Paper>
 
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-            <Button variant="outlined" onClick={() => window.location.reload()}>
-              Cancel
+            <Button 
+              variant="outlined" 
+              onClick={() => {
+                if (settingsData?.data?.settings) {
+                  setSettings(settingsData.data.settings);
+                }
+              }}
+            >
+              Reset
             </Button>
-            <Button variant="contained" startIcon={<Save />} onClick={handleSave}>
-              Save Settings
+            <Button 
+              variant="contained" 
+              startIcon={<Save />} 
+              onClick={handleSave}
+              disabled={updateSettingsMutation.isLoading}
+            >
+              {updateSettingsMutation.isLoading ? 'Saving...' : 'Save Settings'}
             </Button>
           </Box>
         </Grid>

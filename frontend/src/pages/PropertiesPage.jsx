@@ -17,6 +17,9 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import {
   Add,
@@ -31,22 +34,28 @@ import {
   CheckCircle,
   RadioButtonUnchecked,
   Groups,
+  ExpandMore,
+  Business,
 } from '@mui/icons-material';
 import toast from 'react-hot-toast';
 
-import { propertiesAPI } from '../services/api';
+import { propertiesAPI, organizationsAPI } from '../services/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useAuth } from '../contexts/AuthContext';
 import PropertySelectorDialog from '../components/PropertySelectorDialog';
+import PropertyEditDialog from '../components/PropertyEditDialog';
 
 const PropertiesPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasRole } = useAuth();
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [propertyDialog, setPropertyDialog] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+
+  const isSuperAdmin = !!hasRole('super_admin');
 
   // Fetch properties
   const {
@@ -54,6 +63,15 @@ const PropertiesPage = () => {
     isLoading,
     error,
   } = useQuery('properties', propertiesAPI.getAll);
+
+  // Fetch organizations if super admin
+  const {
+    data: orgsData,
+    isLoading: orgsLoading,
+  } = useQuery('organizations', organizationsAPI.getAll, {
+    enabled: isSuperAdmin,
+    retry: 2,
+  });
 
   // Delete property mutation
   const deletePropertyMutation = useMutation(propertiesAPI.delete, {
@@ -68,12 +86,65 @@ const PropertiesPage = () => {
     },
   });
 
+  // Update property mutation
+  const updatePropertyMutation = useMutation(
+    ({ id, data }) => propertiesAPI.update(id, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('properties');
+        setEditDialogOpen(false);
+        setSelectedProperty(null);
+      },
+      onError: (error) => {
+        throw error; // Let the dialog handle the error
+      },
+    }
+  );
+
   const properties = propertiesData?.data?.properties || [];
+  const organizations = orgsData?.data?.organizations || [];
+
+  // Group properties by organization if super admin
+  const groupedProperties = React.useMemo(() => {
+    if (!isSuperAdmin) {
+      return null; // Don't group for non-super admins
+    }
+
+    const groups = {};
+    const orgMap = {};
+    
+    // Create organization map
+    organizations.forEach(org => {
+      orgMap[org.id] = org;
+    });
+
+    // Group properties by organizationId
+    properties.forEach(property => {
+      const orgId = property.organizationId || 'unassigned';
+      if (!groups[orgId]) {
+        groups[orgId] = {
+          organizationId: orgId,
+          organizationName: orgMap[orgId]?.name || 'Unassigned Organization',
+          organization: orgMap[orgId] || null,
+          properties: [],
+        };
+      }
+      groups[orgId].properties.push(property);
+    });
+
+    // Sort organizations by name
+    return Object.values(groups).sort((a, b) => 
+      a.organizationName.localeCompare(b.organizationName)
+    );
+  }, [properties, organizations, isSuperAdmin]);
 
   // Debug logging
   console.log('🏢 PropertiesPage - API Response:', propertiesData);
   console.log('🏢 PropertiesPage - Properties array:', properties);
   console.log('🏢 PropertiesPage - Properties count:', properties.length);
+  if (isSuperAdmin) {
+    console.log('🏢 PropertiesPage - Grouped by organization:', groupedProperties);
+  }
 
   const handleMenuClick = (event, property) => {
     event.stopPropagation();
@@ -87,10 +158,12 @@ const PropertiesPage = () => {
   };
 
   const handleEdit = () => {
-    if (selectedProperty) {
-      navigate(`/app/properties/${selectedProperty.id}?edit=true`);
-    }
     handleMenuClose();
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateProperty = async (id, data) => {
+    return updatePropertyMutation.mutateAsync({ id, data });
   };
 
   const handleAssignSpaces = () => {
@@ -184,7 +257,138 @@ const PropertiesPage = () => {
     };
   };
 
-  if (isLoading) {
+  // Helper function to render property card content
+  const renderPropertyCard = (property) => {
+    const spaceInfo = getSpaceAvailability(property);
+    return (
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="h6" component="h3" gutterBottom>
+              {property.name}
+            </Typography>
+            <Chip
+              label={getStatusLabel(property.status)}
+              color={getStatusColor(property.status)}
+              size="small"
+            />
+          </Box>
+          <IconButton
+            size="small"
+            onClick={(e) => handleMenuClick(e, property)}
+          >
+            <MoreVert />
+          </IconButton>
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <LocationOn fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+          <Typography variant="body2" color="text.secondary">
+            {property.location?.village}, {property.location?.district}
+          </Typography>
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+          <Home fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
+          <Typography variant="body2" color="text.secondary">
+            {property.type?.charAt(0).toUpperCase() + property.type?.slice(1)} • {property.ownershipType || 'Unknown'}
+          </Typography>
+        </Box>
+
+        {/* Space Availability Display */}
+        <Box sx={{ mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+            <Apartment fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+            <Typography variant="body2" fontWeight="medium">
+              Space Availability
+            </Typography>
+          </Box>
+          
+          <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <CheckCircle fontSize="small" sx={{ mr: 0.5, color: 'success.main' }} />
+              <Typography variant="body2" color="success.main">
+                {spaceInfo.occupied} Occupied
+              </Typography>
+            </Box>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <RadioButtonUnchecked fontSize="small" sx={{ mr: 0.5, color: 'warning.main' }} />
+              <Typography variant="body2" color="warning.main">
+                {spaceInfo.available} Available
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Total: {spaceInfo.total} spaces
+            </Typography>
+            {spaceInfo.total > 0 && (
+              <Chip
+                label={`${spaceInfo.occupancyRate}% Occupied`}
+                size="small"
+                color={spaceInfo.occupancyRate >= 80 ? 'success' : spaceInfo.occupancyRate >= 50 ? 'warning' : 'error'}
+                variant="outlined"
+              />
+            )}
+          </Box>
+
+          {/* Available Space Highlight */}
+          {spaceInfo.available > 0 && (
+            <Box 
+              sx={{ 
+                mt: 1, 
+                p: 1, 
+                backgroundColor: 'success.50', 
+                borderRadius: 1, 
+                border: '1px solid',
+                borderColor: 'success.200'
+              }}
+            >
+              <Typography variant="body2" color="success.dark" fontWeight="medium">
+                🎉 {spaceInfo.available} space{spaceInfo.available > 1 ? 's' : ''} ready for new tenants!
+              </Typography>
+            </Box>
+          )}
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <AttachMoney fontSize="small" sx={{ mr: 1, color: 'success.main' }} />
+          <Typography variant="h6" color="success.main">
+            UGX {
+              property.type === 'building' && property.buildingDetails
+                ? (property.buildingDetails.floors?.reduce((total, floor) => {
+                    const floorIncome = floor.spaces?.reduce((spaceTotal, space) => spaceTotal + (space.monthlyRent || 0), 0) || 0;
+                    return total + floorIncome;
+                  }, 0) || 0).toLocaleString()
+                : property.type === 'land' && property.landDetails
+                ? (property.landDetails.squatters?.reduce((total, squatter) => total + (squatter.monthlyPayment || 0), 0) || 0).toLocaleString()
+                : '0'
+            }/month
+          </Typography>
+        </Box>
+
+        {property.description && (
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              mt: 2,
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              overflow: 'hidden',
+            }}
+          >
+            {property.description}
+          </Typography>
+        )}
+      </CardContent>
+    );
+  };
+
+  if (isLoading || (isSuperAdmin && orgsLoading)) {
     return <LoadingSpinner message="Loading properties..." />;
   }
 
@@ -311,156 +515,92 @@ const PropertiesPage = () => {
         </Card>
       )}
 
-      {/* Properties Grid */}
+      {/* Properties Grid - Grouped by Organization for Super Admins */}
       {properties.length > 0 ? (
-        <Grid container spacing={3}>
-          {properties.map((property) => (
-            <Grid item xs={12} sm={6} md={4} key={property.id}>
-              <Card
-                sx={{
-                  height: '100%',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: 4,
-                  },
-                }}
-                onClick={() => navigate(`/properties/${property.id}`)}
-              >
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="h6" component="h3" gutterBottom>
-                        {property.name}
+        isSuperAdmin && groupedProperties ? (
+          // Super Admin View: Grouped by Organization
+          <Box>
+            {groupedProperties.map((group, groupIndex) => (
+              <Box key={group.organizationId} sx={{ mb: 4 }}>
+                <Accordion defaultExpanded={groupIndex === 0}>
+                  <AccordionSummary
+                    expandIcon={<ExpandMore />}
+                    sx={{
+                      backgroundColor: 'primary.50',
+                      '&:hover': {
+                        backgroundColor: 'primary.100',
+                      },
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', width: '100%', pr: 2 }}>
+                      <Business sx={{ mr: 2, color: 'primary.main' }} />
+                      <Typography variant="h6" sx={{ fontWeight: 600, flex: 1 }}>
+                        {group.organizationName}
                       </Typography>
                       <Chip
-                        label={getStatusLabel(property.status)}
-                        color={getStatusColor(property.status)}
-                        size="small"
+                        label={`${group.properties.length} ${group.properties.length === 1 ? 'property' : 'properties'}`}
+                        color="primary"
+                        variant="outlined"
+                        sx={{ mr: 2 }}
                       />
+                      {group.organization && (
+                        <Chip
+                          label={group.organization.status || 'active'}
+                          color={group.organization.status === 'active' ? 'success' : 'default'}
+                          size="small"
+                        />
+                      )}
                     </Box>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => handleMenuClick(e, property)}
-                    >
-                      <MoreVert />
-                    </IconButton>
-                  </Box>
-
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <LocationOn fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                    <Typography variant="body2" color="text.secondary">
-                      {property.location?.village}, {property.location?.district}
-                    </Typography>
-                  </Box>
-
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Home fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
-                    <Typography variant="body2" color="text.secondary">
-                      {property.type?.charAt(0).toUpperCase() + property.type?.slice(1)} • {property.ownershipType || 'Unknown'}
-                    </Typography>
-                  </Box>
-
-                  {/* Space Availability Display */}
-                  {(() => {
-                    const spaceInfo = getSpaceAvailability(property);
-                    return (
-                      <Box sx={{ mb: 2 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                          <Apartment fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
-                          <Typography variant="body2" fontWeight="medium">
-                            Space Availability
-                          </Typography>
-                        </Box>
-                        
-                        <Box sx={{ display: 'flex', gap: 2, mb: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <CheckCircle fontSize="small" sx={{ mr: 0.5, color: 'success.main' }} />
-                            <Typography variant="body2" color="success.main">
-                              {spaceInfo.occupied} Occupied
-                            </Typography>
-                          </Box>
-                          
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <RadioButtonUnchecked fontSize="small" sx={{ mr: 0.5, color: 'warning.main' }} />
-                            <Typography variant="body2" color="warning.main">
-                              {spaceInfo.available} Available
-                            </Typography>
-                          </Box>
-                        </Box>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body2" color="text.secondary">
-                            Total: {spaceInfo.total} spaces
-                          </Typography>
-                          {spaceInfo.total > 0 && (
-                            <Chip
-                              label={`${spaceInfo.occupancyRate}% Occupied`}
-                              size="small"
-                              color={spaceInfo.occupancyRate >= 80 ? 'success' : spaceInfo.occupancyRate >= 50 ? 'warning' : 'error'}
-                              variant="outlined"
-                            />
-                          )}
-                        </Box>
-
-                        {/* Available Space Highlight */}
-                        {spaceInfo.available > 0 && (
-                          <Box 
-                            sx={{ 
-                              mt: 1, 
-                              p: 1, 
-                              backgroundColor: 'success.50', 
-                              borderRadius: 1, 
-                              border: '1px solid',
-                              borderColor: 'success.200'
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Grid container spacing={3}>
+                      {group.properties.map((property) => (
+                        <Grid item xs={12} sm={6} md={4} key={property.id}>
+                          <Card
+                            sx={{
+                              height: '100%',
+                              cursor: 'pointer',
+                              transition: 'transform 0.2s, box-shadow 0.2s',
+                              '&:hover': {
+                                transform: 'translateY(-2px)',
+                                boxShadow: 4,
+                              },
                             }}
+                            onClick={() => navigate(`/properties/${property.id}`)}
                           >
-                            <Typography variant="body2" color="success.dark" fontWeight="medium">
-                              🎉 {spaceInfo.available} space{spaceInfo.available > 1 ? 's' : ''} ready for new tenants!
-                            </Typography>
-                          </Box>
-                        )}
-                      </Box>
-                    );
-                  })()}
-
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <AttachMoney fontSize="small" sx={{ mr: 1, color: 'success.main' }} />
-                    <Typography variant="h6" color="success.main">
-                      UGX {
-                        property.type === 'building' && property.buildingDetails
-                          ? (property.buildingDetails.floors?.reduce((total, floor) => {
-                              const floorIncome = floor.spaces?.reduce((spaceTotal, space) => spaceTotal + (space.monthlyRent || 0), 0) || 0;
-                              return total + floorIncome;
-                            }, 0) || 0).toLocaleString()
-                          : property.type === 'land' && property.landDetails
-                          ? (property.landDetails.squatters?.reduce((total, squatter) => total + (squatter.monthlyPayment || 0), 0) || 0).toLocaleString()
-                          : '0'
-                      }/month
-                    </Typography>
-                  </Box>
-
-                  {property.description && (
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{
-                        mt: 2,
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {property.description}
-                    </Typography>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                            {renderPropertyCard(property)}
+                          </Card>
+                        </Grid>
+                      ))}
+                    </Grid>
+                  </AccordionDetails>
+                </Accordion>
+              </Box>
+            ))}
+          </Box>
+        ) : (
+          // Regular User View: All Properties in a Grid
+          <Grid container spacing={3}>
+            {properties.map((property) => (
+              <Grid item xs={12} sm={6} md={4} key={property.id}>
+                <Card
+                  sx={{
+                    height: '100%',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: 4,
+                    },
+                  }}
+                  onClick={() => navigate(`/properties/${property.id}`)}
+                >
+                  {renderPropertyCard(property)}
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        )
       ) : (
         <Box
           sx={{
@@ -530,6 +670,17 @@ const PropertiesPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Edit Property Dialog */}
+      <PropertyEditDialog
+        open={editDialogOpen}
+        onClose={() => {
+          setEditDialogOpen(false);
+          setSelectedProperty(null);
+        }}
+        property={selectedProperty}
+        onUpdate={handleUpdateProperty}
+      />
     </Box>
   );
 };

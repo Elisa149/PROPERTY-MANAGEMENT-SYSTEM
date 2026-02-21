@@ -61,6 +61,26 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Property Management System API',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      properties: '/api/properties',
+      tenants: '/api/tenants',
+      rent: '/api/rent',
+      payments: '/api/payments',
+      invoices: '/api/invoices',
+      organizations: '/api/organizations',
+      users: '/api/users',
+      system: '/api/system'
+    }
+  });
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

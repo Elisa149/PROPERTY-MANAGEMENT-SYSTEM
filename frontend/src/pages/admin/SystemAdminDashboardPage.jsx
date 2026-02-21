@@ -15,6 +15,7 @@ import {
   Chip,
   LinearProgress,
   Alert,
+  Button,
 } from '@mui/material';
 import {
   Business,
@@ -25,8 +26,13 @@ import {
   CheckCircle,
   Warning,
   Schedule,
+  Add,
+  Settings,
+  Assessment,
+  ManageAccounts,
 } from '@mui/icons-material';
 import { useQuery } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import { organizationsAPI, usersAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -34,6 +40,7 @@ import toast from 'react-hot-toast';
 
 const SystemAdminDashboardPage = () => {
   const { hasRole } = useAuth();
+  const navigate = useNavigate();
 
   if (!hasRole('super_admin')) {
     return (
@@ -112,14 +119,133 @@ const SystemAdminDashboardPage = () => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
-          System Administration Dashboard
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Overview of all organizations, users, and system activity
-        </Typography>
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Box>
+          <Typography variant="h4" gutterBottom sx={{ fontWeight: 600 }}>
+            System Administration Dashboard
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Overview of all organizations, users, and system activity
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => navigate('/app/admin/organizations')}
+            sx={{ minWidth: 180 }}
+          >
+            Create Organization
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Settings />}
+            onClick={() => navigate('/app/admin/system-settings')}
+          >
+            System Settings
+          </Button>
+        </Box>
       </Box>
+
+      {/* Quick Actions */}
+      <Grid container spacing={2} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card 
+            sx={{ 
+              cursor: 'pointer', 
+              '&:hover': { bgcolor: 'action.hover' },
+              transition: 'background-color 0.2s'
+            }}
+            onClick={() => navigate('/app/admin/organizations')}
+          >
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Business sx={{ fontSize: 32, color: 'primary.main' }} />
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Manage Organizations
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    View & Edit All
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card 
+            sx={{ 
+              cursor: 'pointer', 
+              '&:hover': { bgcolor: 'action.hover' },
+              transition: 'background-color 0.2s'
+            }}
+            onClick={() => navigate('/app/admin/users')}
+          >
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <People sx={{ fontSize: 32, color: 'primary.main' }} />
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    Manage Users
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    View & Edit All
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card 
+            sx={{ 
+              cursor: 'pointer', 
+              '&:hover': { bgcolor: 'action.hover' },
+              transition: 'background-color 0.2s'
+            }}
+            onClick={() => navigate('/app/admin/global-analytics')}
+          >
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Assessment sx={{ fontSize: 32, color: 'primary.main' }} />
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    View Analytics
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    System Reports
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card 
+            sx={{ 
+              cursor: 'pointer', 
+              '&:hover': { bgcolor: 'action.hover' },
+              transition: 'background-color 0.2s'
+            }}
+            onClick={() => navigate('/app/admin/system-settings')}
+          >
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Settings sx={{ fontSize: 32, color: 'primary.main' }} />
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    System Settings
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Configure System
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
       {/* System Statistics Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>

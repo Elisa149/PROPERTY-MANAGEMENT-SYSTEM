@@ -12,11 +12,17 @@ import { AuthProvider } from './contexts/AuthContext';
 import theme from './theme/theme';
 import './index.css';
 
-// Create a client for React Query
+// Create a client for React Query with optimized settings for fresh data
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
+      retry: 1,
+      staleTime: 0, // Data is stale immediately - ensures fresh data on mount
+      cacheTime: 5 * 60 * 1000, // Keep in cache for 5 minutes (for quick navigation)
+      refetchOnMount: true, // Always refetch when component mounts
+    },
+    mutations: {
       retry: 1,
     },
   },

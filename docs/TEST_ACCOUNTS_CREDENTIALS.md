@@ -16,12 +16,16 @@ All accounts created for testing the RBAC (Role-Based Access Control) system wit
 
 ### **Access & Permissions:**
 - ✅ Full system access across ALL organizations
-- ✅ Create/manage all organizations
-- ✅ Manage users across all organizations
+- ✅ Create/manage/delete all organizations
+- ✅ Manage users across all organizations (remove, suspend, update roles)
 - ✅ Access ALL properties (all organizations)
-- ✅ View ALL financial data
+- ✅ View ALL financial data across all organizations
 - ✅ System configuration and settings
 - ✅ Global reports and analytics
+- ✅ Manage roles in any organization (including system roles)
+- ✅ View and manage invitations across all organizations
+- ✅ No organization membership required
+- ✅ Bypasses all permission checks
 
 ### **Navigation Items:**
 - Dashboard

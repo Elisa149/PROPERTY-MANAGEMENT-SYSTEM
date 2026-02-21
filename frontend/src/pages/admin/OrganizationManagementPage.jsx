@@ -29,6 +29,9 @@ import {
   Switch,
   FormControlLabel,
   Divider,
+  Menu,
+  Tooltip,
+  InputAdornment,
 } from '@mui/material';
 import {
   Add,
@@ -44,6 +47,14 @@ import {
   PersonAdd,
   Home,
   AttachMoney,
+  MoreVert,
+  Block,
+  Search,
+  FilterList,
+  Analytics,
+  Payment,
+  Assessment,
+  GetApp,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { organizationsAPI } from '../../services/api';
@@ -61,9 +72,15 @@ const OrganizationManagementPage = () => {
   const [usersDialogOpen, setUsersDialogOpen] = useState(false);
   const [editUserRoleDialogOpen, setEditUserRoleDialogOpen] = useState(false);
   const [removeUserDialogOpen, setRemoveUserDialogOpen] = useState(false);
+  const [statusChangeDialogOpen, setStatusChangeDialogOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [quickActionOrg, setQuickActionOrg] = useState(null);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedRoleId, setSelectedRoleId] = useState('');
+  const [newStatus, setNewStatus] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -217,6 +234,23 @@ const OrganizationManagementPage = () => {
     }
   );
 
+  // Update organization status mutation
+  const updateStatusMutation = useMutation(
+    ({ orgId, status }) => organizationsAPI.update(orgId, { ...selectedOrg, status }),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('organizations');
+        toast.success(`Organization status updated to ${newStatus} successfully`);
+        setStatusChangeDialogOpen(false);
+        setSelectedOrg(null);
+        setNewStatus('');
+      },
+      onError: (error) => {
+        toast.error(error.response?.data?.error || 'Failed to update organization status');
+      },
+    }
+  );
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -316,6 +350,41 @@ const OrganizationManagementPage = () => {
   const handleConfirmDelete = () => {
     deleteMutation.mutate();
   };
+
+  const handleStatusChange = (org) => {
+    setSelectedOrg(org);
+    setNewStatus(org.status || 'active');
+    setStatusChangeDialogOpen(true);
+  };
+
+  const handleConfirmStatusChange = () => {
+    if (!selectedOrg || !newStatus) return;
+    updateStatusMutation.mutate({
+      orgId: selectedOrg.id,
+      status: newStatus,
+    });
+  };
+
+  const handleQuickActionsOpen = (event, org) => {
+    setAnchorEl(event.currentTarget);
+    setQuickActionOrg(org);
+  };
+
+  const handleQuickActionsClose = () => {
+    setAnchorEl(null);
+    setQuickActionOrg(null);
+  };
+
+  // Filter organizations
+  const filteredOrganizations = organizations.filter((org) => {
+    const matchesSearch =
+      !searchTerm ||
+      org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      org.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      org.contact?.email?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = !filterStatus || org.status === filterStatus;
+    return matchesSearch && matchesStatus;
+  });
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -447,6 +516,63 @@ const OrganizationManagementPage = () => {
         </Grid>
       </Grid>
 
+      {/* Search and Filters */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={6}>
+            <TextField
+              fullWidth
+              placeholder="Search organizations by name, description, or email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} md={3}>
+            <FormControl fullWidth>
+              <InputLabel htmlFor="filter-status-org">Filter by Status</InputLabel>
+              <Select
+                id="filter-status-org"
+                value={filterStatus}
+                label="Filter by Status"
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <MenuItem value="">All Statuses</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="inactive">Inactive</MenuItem>
+                <MenuItem value="suspended">Suspended</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={3}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <Chip
+                label={`${filteredOrganizations.length} of ${organizations.length}`}
+                color="primary"
+                variant="outlined"
+              />
+              {(searchTerm || filterStatus) && (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterStatus('');
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              )}
+            </Box>
+          </Grid>
+        </Grid>
+      </Paper>
+
       {/* Organizations Table */}
       <TableContainer component={Paper}>
         <Table>
@@ -463,22 +589,28 @@ const OrganizationManagementPage = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {organizations.length === 0 ? (
+            {filteredOrganizations.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                  <Typography color="text.secondary">No organizations found</Typography>
-                  <Button
-                    variant="outlined"
-                    startIcon={<Add />}
-                    onClick={handleCreate}
-                    sx={{ mt: 2 }}
-                  >
-                    Create First Organization
-                  </Button>
+                  <Typography color="text.secondary">
+                    {searchTerm || filterStatus
+                      ? 'No organizations match the filters'
+                      : 'No organizations found'}
+                  </Typography>
+                  {!searchTerm && !filterStatus && (
+                    <Button
+                      variant="outlined"
+                      startIcon={<Add />}
+                      onClick={handleCreate}
+                      sx={{ mt: 2 }}
+                    >
+                      Create First Organization
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ) : (
-              organizations.map((org) => (
+              filteredOrganizations.map((org) => (
                 <TableRow key={org.id} hover>
                   <TableCell>
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
@@ -578,38 +710,43 @@ const OrganizationManagementPage = () => {
                   <TableCell>{org.settings?.currency || 'UGX'}</TableCell>
                   <TableCell>{org.contact?.email || '-'}</TableCell>
                   <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => handleViewUsers(org)}
-                      title="View Users"
-                    >
-                      <People />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => handleView(org)}
-                      title="View Details"
-                    >
-                      <Visibility />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => handleEdit(org)}
-                      title="Edit"
-                    >
-                      <Edit />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      onClick={() => handleDelete(org)}
-                      title="Delete"
-                    >
-                      <Delete />
-                    </IconButton>
+                    <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'flex-end' }}>
+                      <Tooltip title="View Details">
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => handleView(org)}
+                        >
+                          <Visibility />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Edit Organization">
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() => handleEdit(org)}
+                        >
+                          <Edit />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Change Status">
+                        <IconButton
+                          size="small"
+                          color={org.status === 'suspended' ? 'warning' : 'default'}
+                          onClick={() => handleStatusChange(org)}
+                        >
+                          {org.status === 'suspended' ? <CheckCircle /> : <Block />}
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="More Actions">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => handleQuickActionsOpen(e, org)}
+                        >
+                          <MoreVert />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
                   </TableCell>
                 </TableRow>
               ))
@@ -1194,6 +1331,103 @@ const OrganizationManagementPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Status Change Dialog */}
+      <Dialog open={statusChangeDialogOpen} onClose={() => setStatusChangeDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Change Organization Status</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            {selectedOrg && (
+              <>
+                <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Business sx={{ fontSize: 40, color: 'primary.main' }} />
+                  <Box>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                      {selectedOrg.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {selectedOrg.description || 'No description'}
+                    </Typography>
+                    <Chip
+                      label={`Current: ${selectedOrg.status || 'active'}`}
+                      color={getStatusColor(selectedOrg.status)}
+                      size="small"
+                      sx={{ mt: 1 }}
+                    />
+                  </Box>
+                </Box>
+
+                <FormControl fullWidth>
+                  <InputLabel htmlFor="org-status-change">New Status</InputLabel>
+                  <Select
+                    id="org-status-change"
+                    value={newStatus}
+                    label="New Status"
+                    onChange={(e) => setNewStatus(e.target.value)}
+                  >
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="inactive">Inactive</MenuItem>
+                    <MenuItem value="suspended">Suspended</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                  <Typography variant="caption">
+                    <strong>Suspended:</strong> Organization and all users will be blocked from accessing the system.
+                    <br />
+                    <strong>Inactive:</strong> Organization is disabled but data is preserved.
+                    <br />
+                    <strong>Active:</strong> Organization is fully operational.
+                  </Typography>
+                </Alert>
+              </>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStatusChangeDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleConfirmStatusChange}
+            variant="contained"
+            disabled={!newStatus || updateStatusMutation.isLoading}
+          >
+            {updateStatusMutation.isLoading ? <CircularProgress size={24} /> : 'Update Status'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Quick Actions Menu */}
+      <Menu
+        anchorEl={anchorEl}
+        open={Boolean(anchorEl)}
+        onClose={handleQuickActionsClose}
+        onClick={handleQuickActionsClose}
+      >
+        {quickActionOrg && (
+          <>
+            <MenuItem onClick={() => { handleView(quickActionOrg); handleQuickActionsClose(); }}>
+              <Visibility sx={{ mr: 1 }} /> View Details
+            </MenuItem>
+            <MenuItem onClick={() => { handleEdit(quickActionOrg); handleQuickActionsClose(); }}>
+              <Edit sx={{ mr: 1 }} /> Edit Organization
+            </MenuItem>
+            <MenuItem onClick={() => { handleViewUsers(quickActionOrg); handleQuickActionsClose(); }}>
+              <People sx={{ mr: 1 }} /> Manage Users
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={() => { handleStatusChange(quickActionOrg); handleQuickActionsClose(); }}>
+              <Block sx={{ mr: 1 }} /> Change Status
+            </MenuItem>
+            <Divider />
+            <MenuItem 
+              onClick={() => { handleDelete(quickActionOrg); handleQuickActionsClose(); }}
+              sx={{ color: 'error.main' }}
+            >
+              <Delete sx={{ mr: 1 }} /> Delete Organization
+            </MenuItem>
+          </>
+        )}
+      </Menu>
     </Box>
   );
 };
