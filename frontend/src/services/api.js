@@ -1,7 +1,9 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+// Same-origin /api when frontend and backend are deployed together (e.g. Vercel)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+  || (import.meta.env.PROD ? '/api' : 'http://localhost:5001/api');
 
 // Create axios instance
 const api = axios.create({

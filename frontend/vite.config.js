@@ -15,7 +15,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    // On Vercel, output to repo root public/ so static assets are served by CDN
+    outDir: process.env.VERCEL ? '../public' : 'dist',
     sourcemap: true,
   },
 })
