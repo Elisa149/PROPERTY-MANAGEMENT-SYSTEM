@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd frontend && npm run build",
+  "buildCommand": "yarn build",
   "installCommand": "yarn install",
   "framework": null
 }
