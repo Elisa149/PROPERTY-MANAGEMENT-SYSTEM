@@ -1,260 +1,241 @@
 # Property Management System
 
-A comprehensive web application for managing rental properties, tracking rent payments, and monitoring tenant information. Built with Node.js, React, Firebase, and Material-UI.
+A comprehensive web application for managing rental properties, tracking rent payments, and monitoring tenant information. Built with React and Firebase — no backend server required.
 
 ## Features
 
-- 🏠 **Property Management**: Add, edit, and manage your rental properties
-- 💰 **Rent Tracking**: Track monthly rent amounts and lease agreements  
-- 📊 **Payment Monitoring**: Record and monitor rent payments with detailed history
-- 👤 **User Authentication**: Secure login with Firebase Authentication (Email/Password and Google)
-- 📈 **Dashboard Analytics**: Overview of collection rates, recent payments, and property statistics
-- 📱 **Responsive Design**: Mobile-friendly interface built with Material-UI
-- 🔒 **Secure Backend**: Node.js/Express API with Firebase Admin SDK
+- **Property Management** — Add, edit, and manage buildings and land properties with floors, spaces, and squatter areas
+- **Tenant Management** — Assign tenants to spaces, track lease dates, and renew leases
+- **Rent & Invoices** — Create monthly invoices for active tenants and track rent agreements
+- **Payment Tracking** — Record and monitor rent payments with receipts and export to CSV
+- **Dashboard Analytics** — Collection rates, monthly comparisons, and property statistics
+- **Role-Based Access Control (RBAC)** — Super Admin, Org Admin, Property Manager, and Financial Viewer roles
+- **Multi-Organization Support** — Manage multiple organizations from a single super admin account
+- **User Authentication** — Email/password and Google sign-in via Firebase Auth
+- **Responsive Design** — Mobile-friendly interface built with Material-UI
 
 ## Tech Stack
 
-### Frontend
-- **React** - UI framework
-- **Vite** - Build tool and development server
-- **Material-UI (MUI)** - Component library and design system
-- **React Router** - Client-side routing
-- **React Query** - Data fetching and caching
-- **React Hook Form** - Form management
-- **Firebase SDK** - Authentication
-
-### Backend
-- **Node.js** - Runtime environment
-- **Express** - Web framework
-- **Firebase Admin SDK** - Authentication and Firestore database
-- **Joi** - Data validation
-- **CORS, Helmet** - Security middleware
-
-### Database
-- **Firebase Firestore** - NoSQL document database
+- **React 18** — UI framework
+- **Vite** — Build tool and development server
+- **Material-UI (MUI)** — Component library and design system
+- **React Router v6** — Client-side routing
+- **React Query** — Data fetching and caching
+- **Firebase Authentication** — User sign-in
+- **Firebase Firestore** — NoSQL database (direct from frontend, no backend)
+- **React Hook Form** — Form management
+- **date-fns** — Date utilities
+- **Recharts** — Analytics charts
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js (v16 or higher)
+
+- Node.js v18 or higher
 - Yarn package manager
-- Firebase project with Firestore and Authentication enabled
+- A Firebase project with Firestore and Authentication enabled
 
-### Setup
+### 1. Clone the repository
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd property-management-system
-   ```
+```bash
+git clone <repository-url>
+cd property-management-system
+```
 
-2. **Install dependencies**
-   ```bash
-   yarn setup
-   ```
+### 2. Configure Firebase
 
-3. **Firebase Configuration**
-   
-   Create a Firebase project at [Firebase Console](https://console.firebase.google.com):
-   - Enable Firestore Database
-   - Enable Authentication (Email/Password and Google providers)
-   - Create a service account and download the private key
-   
-   **Backend Configuration:**
-   ```bash
-   cd backend
-   cp env-template.txt .env
-   ```
-   
-   Edit `.env` with your Firebase credentials:
-   ```
-   FIREBASE_PROJECT_ID=your-project-id
-   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nyour-private-key\n-----END PRIVATE KEY-----"
-   FIREBASE_CLIENT_EMAIL=your-service-account@project.iam.gserviceaccount.com
-   PORT=5000
-   NODE_ENV=development
-   FRONTEND_URL=http://localhost:5173
-   JWT_SECRET=your-secret-key
-   ```
-   
-   **Frontend Configuration:**
-   ```bash
-   cd frontend
-   cp env-template.txt .env
-   ```
-   
-   Edit `.env` with your Firebase web app config:
-   ```
-   VITE_FIREBASE_API_KEY=your-api-key
-   VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-   VITE_FIREBASE_PROJECT_ID=your-project-id
-   VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-   VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-   VITE_FIREBASE_APP_ID=1:123456789:web:abcdef123456
-   VITE_API_BASE_URL=http://localhost:5000/api
-   ```
+Create a Firebase project at [Firebase Console](https://console.firebase.google.com):
 
-4. **Start the development servers**
-   ```bash
-   # Start both frontend and backend
-   yarn dev
-   
-   # Or start individually:
-   # Backend only:
-   cd backend && yarn dev
-   
-   # Frontend only:
-   cd frontend && yarn dev
-   ```
+- Enable **Firestore Database**
+- Enable **Authentication** (Email/Password and Google providers)
+- Copy your web app config from **Project Settings → Your apps**
 
-5. **Open your browser**
-   - Frontend: http://localhost:5173
-   - Backend API: http://localhost:5000
+Create `frontend/.env` with your Firebase credentials:
+
+```env
+VITE_FIREBASE_API_KEY=your-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
+VITE_FIREBASE_APP_ID=1:123456789:web:abcdef123456
+VITE_FIREBASE_MEASUREMENT_ID=G-XXXXXXXXXX
+```
+
+### 3. Install dependencies
+
+```bash
+cd frontend
+yarn install
+```
+
+### 4. Start the development server
+
+```bash
+yarn dev
+```
+
+Open **http://localhost:3000** in your browser.
 
 ## Project Structure
 
 ```
 property-management-system/
-├── backend/                 # Node.js/Express API
-│   ├── routes/             # API route handlers
-│   ├── middleware/         # Authentication middleware
-│   ├── server.js           # Express server setup
-│   └── package.json        # Backend dependencies
-├── frontend/               # React application
+├── frontend/                  # The entire application
 │   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── contexts/       # React context providers
-│   │   ├── pages/          # Main application pages
-│   │   ├── services/       # API service layer
-│   │   └── config/         # Configuration files
-│   ├── public/             # Static assets
-│   └── package.json        # Frontend dependencies
-└── package.json            # Root package.json with workspace scripts
+│   │   ├── components/        # Reusable UI components
+│   │   ├── contexts/          # AuthContext (Firebase Auth + Firestore profile)
+│   │   ├── pages/             # Application pages
+│   │   │   └── admin/         # Super admin and org admin pages
+│   │   ├── services/
+│   │   │   └── api.js         # Firebase SDK service layer (replaces REST API)
+│   │   ├── config/
+│   │   │   └── firebase.js    # Firebase app initialisation
+│   │   └── theme/             # MUI theme and animations
+│   ├── index.html
+│   ├── vite.config.js
+│   ├── package.json
+│   └── .env                   # Firebase credentials (not committed)
+├── docs/                      # Reference documentation
+├── firestore.rules            # Firestore security rules
+├── package.json               # Root scripts
+└── README.md
 ```
 
-## API Endpoints
+## Available Scripts
 
-### Authentication
-- `POST /api/auth/verify` - Verify Firebase token
-- `GET /api/auth/profile` - Get user profile
-- `PUT /api/auth/profile` - Update user profile
-
-### Properties
-- `GET /api/properties` - Get all properties
-- `POST /api/properties` - Create new property
-- `GET /api/properties/:id` - Get specific property
-- `PUT /api/properties/:id` - Update property
-- `DELETE /api/properties/:id` - Delete property
-- `GET /api/properties/:id/stats` - Get property statistics
-
-### Rent Management
-- `GET /api/rent` - Get all rent records
-- `POST /api/rent` - Create new rent record
-- `PUT /api/rent/:id` - Update rent record
-- `DELETE /api/rent/:id` - Delete rent record
-- `GET /api/rent/property/:propertyId` - Get rent records for property
-
-### Payments
-- `GET /api/payments` - Get all payments (with filters)
-- `POST /api/payments` - Record new payment
-- `PUT /api/payments/:id` - Update payment
-- `DELETE /api/payments/:id` - Delete payment
-- `GET /api/payments/dashboard/summary` - Get dashboard summary
-
-## Development
-
-### Available Scripts
+Run these from the **root** directory:
 
 ```bash
-# Install all dependencies (root, frontend, backend)
-yarn setup
-
-# Start both frontend and backend in development mode
+# Start development server
 yarn dev
 
-# Build frontend for production
+# Build for production
 yarn build
 
-# Start production server
-yarn start
+# Preview production build locally
+yarn preview
 ```
 
-### Environment Variables
+Or run from `frontend/` directly with the same commands.
 
-**Backend (.env):**
-- `FIREBASE_PROJECT_ID` - Your Firebase project ID
-- `FIREBASE_PRIVATE_KEY` - Firebase service account private key
-- `FIREBASE_CLIENT_EMAIL` - Firebase service account email
-- `PORT` - Server port (default: 5000)
-- `NODE_ENV` - Environment (development/production)
-- `FRONTEND_URL` - Frontend URL for CORS
-- `JWT_SECRET` - Secret key for JWT tokens
+## Firestore Collections
 
-**Frontend (.env):**
-- `VITE_FIREBASE_API_KEY` - Firebase web app API key
-- `VITE_FIREBASE_AUTH_DOMAIN` - Firebase auth domain
-- `VITE_FIREBASE_PROJECT_ID` - Firebase project ID
-- `VITE_FIREBASE_STORAGE_BUCKET` - Firebase storage bucket
-- `VITE_FIREBASE_MESSAGING_SENDER_ID` - Firebase messaging sender ID
-- `VITE_FIREBASE_APP_ID` - Firebase web app ID
-- `VITE_API_BASE_URL` - Backend API base URL
+The app reads and writes these Firestore collections directly from the frontend:
 
-## Firebase Security Rules
+| Collection | Description |
+|---|---|
+| `users` | User profiles, organizationId, roleId, status |
+| `organizations` | Organization records |
+| `roles` | Role definitions with permissions arrays |
+| `properties` | Property documents (buildings and land) |
+| `rent` | Rent/lease records linking tenants to spaces |
+| `payments` | Payment records |
+| `invoices` | Monthly invoices |
+| `accessRequests` | Pending user access requests |
 
-Add these Firestore security rules to ensure data privacy:
+## Firestore Security Rules
+
+Deploy these rules from the Firebase Console (**Firestore → Rules**) or using the Firebase CLI:
 
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can only access their own data
+
+    // Users can read their own profile; admins can read all
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        (request.auth.uid == userId ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.keys().hasAny(['roleId']));
     }
-    
-    // Properties - users can only access their own properties
-    match /properties/{propertyId} {
-      allow read, write: if request.auth != null && 
-        resource.data.userId == request.auth.uid;
+
+    // Authenticated users can read/write their organization's data
+    match /properties/{doc} {
+      allow read, write: if request.auth != null;
     }
-    
-    // Rent records - users can only access rent for their properties
-    match /rent/{rentId} {
-      allow read, write: if request.auth != null &&
-        exists(/databases/$(database)/documents/properties/$(resource.data.propertyId)) &&
-        get(/databases/$(database)/documents/properties/$(resource.data.propertyId)).data.userId == request.auth.uid;
+    match /rent/{doc} {
+      allow read, write: if request.auth != null;
     }
-    
-    // Payments - users can only access payments for their properties
-    match /payments/{paymentId} {
-      allow read, write: if request.auth != null &&
-        exists(/databases/$(database)/documents/properties/$(resource.data.propertyId)) &&
-        get(/databases/$(database)/documents/properties/$(resource.data.propertyId)).data.userId == request.auth.uid;
+    match /payments/{doc} {
+      allow read, write: if request.auth != null;
+    }
+    match /invoices/{doc} {
+      allow read, write: if request.auth != null;
+    }
+    match /organizations/{doc} {
+      allow read, write: if request.auth != null;
+    }
+    match /roles/{doc} {
+      allow read, write: if request.auth != null;
+    }
+    match /accessRequests/{doc} {
+      allow read, write: if request.auth != null;
+    }
+    match /invitations/{doc} {
+      allow read, write: if request.auth != null;
+    }
+    match /system/{doc} {
+      allow read, write: if request.auth != null;
     }
   }
 }
 ```
 
-## Contributing
+## RBAC — Role Levels
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+| Role | Level | Description |
+|---|---|---|
+| Super Admin | 10/10 | Full access across all organizations |
+| Org Admin | 9/10 | Full access within their organization |
+| Property Manager | 6/10 | Manages assigned properties only |
+| Financial Viewer | 4/10 | Read-only access to financial data |
+
+New users must sign up and submit an access request. An Org Admin then approves the request and assigns a role.
+
+## Deployment
+
+The app is a pure static site — deploy the contents of `frontend/dist/` to any static host.
+
+### Build
+
+```bash
+cd frontend
+yarn build
+# Output is in frontend/dist/
+```
+
+### Netlify
+
+1. Connect your GitHub repo in Netlify
+2. Set **Base directory** to `frontend`
+3. Set **Build command** to `yarn build`
+4. Set **Publish directory** to `dist`
+5. Add all `VITE_FIREBASE_*` variables under **Environment variables**
+
+### Vercel
+
+1. Connect your GitHub repo in Vercel
+2. Set **Root directory** to `frontend`
+3. Framework preset: **Vite**
+4. Add all `VITE_FIREBASE_*` variables under **Environment variables**
+
+### Firebase Hosting
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init hosting
+# Set public directory to: frontend/dist
+# Configure as SPA: Yes
+firebase deploy
+```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-If you encounter any issues or have questions:
-
-1. Check the [Issues](../../issues) page
-2. Create a new issue if your problem isn't already reported
-3. Provide detailed information about your environment and the issue
+MIT
 
 ---
 
-**Happy Property Managing! 🏠💼**
+**Happy Property Managing!**
