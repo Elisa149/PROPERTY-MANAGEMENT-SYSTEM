@@ -1,33 +1,20 @@
 {
   "name": "property-management-system",
   "version": "1.0.0",
-  "description": "A comprehensive property management web application for tracking properties, rent, and payments",
-  "main": "index.js",
+  "description": "Property management web app — React frontend with Firebase backend",
   "scripts": {
-    "dev": "concurrently \"cd backend && yarn dev\" \"cd frontend && yarn dev\"",
+    "dev": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
-    "start": "cd backend && npm start",
-    "setup": "yarn install && cd backend && yarn install && cd ../frontend && yarn install"
+    "preview": "cd frontend && npm run preview"
   },
   "keywords": [
     "property-management",
     "rent-tracking",
     "firebase",
-    "nodejs",
     "react"
   ],
   "author": "",
   "license": "MIT",
   "private": true,
-  "devDependencies": {
-    "concurrently": "^8.2.2"
-  },
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
-  "dependencies": {
-    "axios": "^1.12.2"
-  }
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

@@ -1,221 +1,814 @@
-import axios from 'axios';
-import toast from 'react-hot-toast';
+/**
+ * Firebase-direct service layer.
+ *
+ * Replaces the Express/Node backend — every call goes straight to Firestore.
+ * Return shapes are kept identical to the old Express API so no page-level
+ * changes are required (pages still do `data?.data?.properties` etc.).
+ *
+ * Security note: row-level access control is enforced by Firestore Security
+ * Rules on the Firebase console.  The permission checks in the UI are
+ * UX-only guards (they do not replace server-side rules).
+ */
 
-// Same-origin /api when frontend and backend are deployed together (e.g. Vercel)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-  || (import.meta.env.PROD ? '/api' : 'http://localhost:5001/api');
+import {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  addDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  limit,
+  serverTimestamp,
+  Timestamp,
+  writeBatch,
+} from 'firebase/firestore';
+import { db, auth } from '../config/firebase';
 
-// Create axios instance
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+// ── Utility helpers ───────────────────────────────────────────────────────────
 
-// Token management
-let authToken = null;
-
-export const setAuthToken = (token) => {
-  authToken = token;
-  if (token) {
-    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  } else {
-    delete api.defaults.headers.common['Authorization'];
+/** Recursively convert Firestore Timestamps to JS Dates in a plain object */
+function convertTimestamps(data) {
+  if (!data || typeof data !== 'object') return data;
+  if (data instanceof Timestamp) return data.toDate();
+  if (data instanceof Date) return data;
+  if (Array.isArray(data)) return data.map(convertTimestamps);
+  const result = {};
+  for (const [k, v] of Object.entries(data)) {
+    result[k] = convertTimestamps(v);
   }
-};
+  return result;
+}
 
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  (config) => {
-    if (authToken) {
-      config.headers.Authorization = `Bearer ${authToken}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+function snapToObj(snap) {
+  return { id: snap.id, ...convertTimestamps(snap.data()) };
+}
 
-// Response interceptor for error handling and token refresh
-api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  async (error) => {
-    const originalRequest = error.config;
-    
-    // Handle 401 errors (token expired)
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      
-      // Try to refresh token
-      try {
-        // Get fresh token from Firebase
-        const auth = (await import('../config/firebase')).auth;
-        const currentUser = auth.currentUser;
-        
-        if (currentUser) {
-          console.log('🔄 Token expired, attempting refresh...');
-          const newToken = await currentUser.getIdToken(true);
-          
-          // Update token for future requests
-          setAuthToken(newToken);
-          
-          // Retry the original request with new token
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
-          return api(originalRequest);
-        } else {
-          // No user, redirect to login
-          console.log('❌ No user found, redirecting to login');
-          window.location.href = '/login';
-          return Promise.reject(error);
-        }
-      } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
-        // Clear token and redirect to login
-        setAuthToken(null);
-        window.location.href = '/login';
-        return Promise.reject(error);
-      }
-    }
-    
-    // Handle 403 errors (forbidden - organization/permission issues)
-    if (error.response?.status === 403) {
-      const errorData = error.response.data;
-      const errorMessage = errorData?.message || errorData?.error || 'Access denied';
-      
-      // Show helpful message for organization membership issues
-      if (errorMessage.includes('organization') || errorMessage.includes('Organization')) {
-        toast.error('Organization membership required. Please contact your administrator to be added to an organization.');
-      } else if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
-        toast.error('You do not have permission to perform this action.');
-      } else {
-        toast.error(errorMessage);
-      }
-      
-      return Promise.reject(error);
-    }
-    
-    const message = error.response?.data?.error || error.message || 'An error occurred';
-    
-    // Don't show toast for 401 errors (handled above)
-    if (error.response?.status !== 401) {
-      toast.error(message);
-    }
-    
-    return Promise.reject(error);
-  }
-);
+// ── User-profile cache (avoids re-fetching on every API call) ─────────────────
 
-// API endpoints
+let _profileCache = null;
+let _profileCacheUid = null;
+
+export function clearProfileCache() {
+  _profileCache = null;
+  _profileCacheUid = null;
+}
+
+async function fetchUserProfile() {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not authenticated');
+  if (_profileCache && _profileCacheUid === user.uid) return _profileCache;
+  const snap = await getDoc(doc(db, 'users', user.uid));
+  if (!snap.exists()) throw new Error('User profile not found');
+  _profileCache = snap.data();
+  _profileCacheUid = user.uid;
+  return _profileCache;
+}
+
+async function getOrgId() {
+  const profile = await fetchUserProfile();
+  return profile.organizationId || null;
+}
+
+/** No-op kept for backwards compatibility — token management is no longer needed */
+export const setAuthToken = () => {};
+
+// ── AUTH API ──────────────────────────────────────────────────────────────────
+
 export const authAPI = {
-  verifyToken: () => api.post('/auth/verify'),
-  getProfile: () => api.get('/auth/profile'),
-  updateProfile: (data) => api.put('/auth/profile', data),
-  requestAccess: (data) => api.post('/auth/request-access', data),
-  getOrganizations: () => api.get('/auth/organizations'),
-  getOrgRoles: (orgId) => api.get(`/auth/organizations/${orgId}/roles`),
-  getAccessRequests: () => api.get('/auth/access-requests'),
-  respondToRequest: (requestId, data) => api.post(`/auth/access-requests/${requestId}/respond`, data),
+  /** Read (or create on first login) the signed-in user's Firestore profile */
+  getProfile: async () => {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Not authenticated');
+
+    const userRef = doc(db, 'users', user.uid);
+    let userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+      // First sign-in — bootstrap a profile document
+      const newUser = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || user.email,
+        organizationId: null,
+        roleId: null,
+        permissions: [],
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      };
+      await setDoc(userRef, newUser);
+      clearProfileCache();
+      return {
+        data: {
+          profile: {
+            uid: user.uid,
+            email: user.email,
+            role: null,
+            permissions: [],
+            organizationId: null,
+            needsRoleAssignment: true,
+          },
+        },
+      };
+    }
+
+    // Update last-login timestamp (fire-and-forget)
+    updateDoc(userRef, { lastLoginAt: serverTimestamp() }).catch(() => {});
+
+    const userProfile = userSnap.data();
+
+    // Load role & permissions from the roles collection
+    let role = null;
+    let permissions = [...(userProfile.permissions || [])];
+
+    if (userProfile.roleId) {
+      const roleSnap = await getDoc(doc(db, 'roles', userProfile.roleId)).catch(() => null);
+      if (roleSnap?.exists()) {
+        role = { id: roleSnap.id, ...roleSnap.data() };
+        permissions = [...new Set([...permissions, ...(role.permissions || [])])];
+      }
+    }
+
+    _profileCache = { ...userProfile, role, permissions };
+    _profileCacheUid = user.uid;
+
+    return {
+      data: {
+        profile: {
+          uid: user.uid,
+          email: user.email,
+          ...userProfile,
+          role,
+          permissions,
+          organizationId: userProfile.organizationId,
+          needsRoleAssignment: !userProfile.organizationId || !userProfile.roleId,
+        },
+      },
+    };
+  },
+
+  updateProfile: async (data) => {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Not authenticated');
+    await updateDoc(doc(db, 'users', user.uid), { ...data, updatedAt: serverTimestamp() });
+    clearProfileCache();
+    return { data: { success: true } };
+  },
+
+  verifyToken: async () => {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Not authenticated');
+    return { data: { valid: true, user: { uid: user.uid, email: user.email } } };
+  },
+
+  requestAccess: async ({ organizationId, message }) => {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Not authenticated');
+
+    let targetOrgId = organizationId;
+    if (!targetOrgId) {
+      const orgSnap = await getDocs(
+        query(collection(db, 'organizations'), where('isDefault', '==', true), limit(1))
+      );
+      if (orgSnap.empty) throw new Error('No default organization found');
+      targetOrgId = orgSnap.docs[0].id;
+    }
+
+    await addDoc(collection(db, 'accessRequests'), {
+      userId: user.uid,
+      userEmail: user.email,
+      userName: user.displayName || user.email,
+      organizationId: targetOrgId,
+      message: message || '',
+      status: 'pending',
+      requestedAt: serverTimestamp(),
+    });
+
+    await updateDoc(doc(db, 'users', user.uid), {
+      status: 'pending_approval',
+      pendingOrganizationId: targetOrgId,
+      accessRequestedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    clearProfileCache();
+    return { data: { success: true, status: 'pending_approval' } };
+  },
+
+  getOrganizations: async () => {
+    const snap = await getDocs(
+      query(collection(db, 'organizations'), where('status', '==', 'active'))
+    );
+    return { data: { organizations: snap.docs.map(snapToObj) } };
+  },
+
+  getOrgRoles: async (orgId) => {
+    const snap = await getDocs(
+      query(collection(db, 'roles'), where('organizationId', '==', orgId))
+    );
+    return { data: { roles: snap.docs.map(snapToObj) } };
+  },
+
+  getAccessRequests: async () => {
+    const snap = await getDocs(
+      query(collection(db, 'accessRequests'), where('status', '==', 'pending'))
+    );
+    return { data: { requests: snap.docs.map(snapToObj) } };
+  },
+
+  respondToRequest: async (requestId, { action, roleId, message }) => {
+    const user = auth.currentUser;
+    if (!user) throw new Error('Not authenticated');
+
+    const reqSnap = await getDoc(doc(db, 'accessRequests', requestId));
+    if (!reqSnap.exists()) throw new Error('Access request not found');
+    const reqData = reqSnap.data();
+
+    const batch = writeBatch(db);
+
+    if (action === 'approve') {
+      batch.update(doc(db, 'users', reqData.userId), {
+        organizationId: reqData.organizationId,
+        roleId,
+        status: 'active',
+        approvedBy: user.uid,
+        approvedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      batch.update(doc(db, 'users', reqData.userId), {
+        status: 'rejected',
+        rejectedBy: user.uid,
+        rejectedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    batch.update(doc(db, 'accessRequests', requestId), {
+      status: action === 'approve' ? 'approved' : 'rejected',
+      respondedBy: user.uid,
+      respondedAt: serverTimestamp(),
+      responseMessage: message || '',
+    });
+
+    await batch.commit();
+    return { data: { success: true, action } };
+  },
 };
+
+// ── PROPERTIES API ────────────────────────────────────────────────────────────
 
 export const propertiesAPI = {
-  getAll: () => api.get('/properties'),
-  getById: (id) => api.get(`/properties/${id}`),
-  create: (data) => api.post('/properties', data),
-  update: (id, data) => api.put(`/properties/${id}`, data),
-  delete: (id) => api.delete(`/properties/${id}`),
-  getStats: (id) => api.get(`/properties/${id}/stats`),
+  getAll: async () => {
+    const orgId = await getOrgId().catch(() => null);
+    const q = orgId
+      ? query(collection(db, 'properties'), where('organizationId', '==', orgId))
+      : query(collection(db, 'properties'));
+    const snap = await getDocs(q);
+    const properties = snap.docs.map(snapToObj);
+    properties.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return { data: { properties } };
+  },
+
+  getById: async (id) => {
+    const snap = await getDoc(doc(db, 'properties', id));
+    if (!snap.exists()) throw new Error('Property not found');
+    return { data: { property: snapToObj(snap) } };
+  },
+
+  create: async (data) => {
+    const user = auth.currentUser;
+    const orgId = await getOrgId();
+    const propertyDoc = {
+      ...data,
+      organizationId: orgId,
+      createdBy: user.uid,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    const ref = await addDoc(collection(db, 'properties'), propertyDoc);
+    return { data: { success: true, property: { id: ref.id, ...propertyDoc } } };
+  },
+
+  update: async (id, data) => {
+    const user = auth.currentUser;
+    const orgId = await getOrgId();
+    const updateData = { ...data, organizationId: orgId, updatedAt: serverTimestamp(), updatedBy: user.uid };
+    await updateDoc(doc(db, 'properties', id), updateData);
+
+    // Sync active rent records when space rents change (mirrors backend behaviour)
+    try {
+      const rentSnap = await getDocs(
+        query(collection(db, 'rent'), where('propertyId', '==', id), where('status', '==', 'active'))
+      );
+      if (!rentSnap.empty) {
+        const batch = writeBatch(db);
+        let changed = 0;
+        rentSnap.forEach((rentDoc) => {
+          const rd = rentDoc.data();
+          if (!rd.spaceId) return;
+          let newRent = null;
+          if (data.type === 'building') {
+            for (const floor of data.buildingDetails?.floors || []) {
+              const sp = (floor.spaces || []).find((s) => s.spaceId === rd.spaceId);
+              if (sp && sp.monthlyRent !== undefined) { newRent = sp.monthlyRent; break; }
+            }
+          } else if (data.type === 'land') {
+            const sq = (data.landDetails?.squatters || []).find((s) => s.squatterId === rd.spaceId);
+            if (sq) newRent = sq.monthlyPayment;
+          }
+          if (newRent !== null && newRent !== rd.monthlyRent) {
+            batch.update(rentDoc.ref, { monthlyRent: newRent, baseRent: newRent, updatedAt: serverTimestamp() });
+            changed++;
+          }
+        });
+        if (changed) await batch.commit();
+      }
+    } catch (_) { /* non-blocking */ }
+
+    return { data: { success: true, property: { id, ...updateData } } };
+  },
+
+  delete: async (id) => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'properties', id));
+    const [rentSnap, pymtSnap] = await Promise.all([
+      getDocs(query(collection(db, 'rent'), where('propertyId', '==', id))),
+      getDocs(query(collection(db, 'payments'), where('propertyId', '==', id))),
+    ]);
+    rentSnap.forEach((d) => batch.delete(d.ref));
+    pymtSnap.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    return { data: { success: true } };
+  },
+
+  getStats: async (id) => {
+    const [propSnap, pymtSnap] = await Promise.all([
+      getDoc(doc(db, 'properties', id)),
+      getDocs(query(collection(db, 'payments'), where('propertyId', '==', id))),
+    ]);
+    let totalCollected = 0;
+    let totalPayments = 0;
+    pymtSnap.forEach((d) => { totalCollected += d.data().amount || 0; totalPayments++; });
+    return { data: { stats: { totalCollected, totalPayments } } };
+  },
 };
+
+// ── RENT API ──────────────────────────────────────────────────────────────────
 
 export const rentAPI = {
-  getAll: () => api.get('/rent'),
-  getAllRentRecords: () => api.get('/rent/all'), // Super Admin - all rent records across organizations
-  getById: (id) => api.get(`/rent/${id}`),
-  getByProperty: (propertyId) => api.get(`/rent/property/${propertyId}`),
-  create: (data) => api.post('/rent', data),
-  update: (id, data) => api.put(`/rent/${id}`, data),
-  delete: (id) => api.delete(`/rent/${id}`),
+  getAll: async () => {
+    const orgId = await getOrgId().catch(() => null);
+    const q = orgId
+      ? query(collection(db, 'rent'), where('organizationId', '==', orgId))
+      : query(collection(db, 'rent'));
+    const snap = await getDocs(q);
+    const rentRecords = snap.docs.map(snapToObj);
+    rentRecords.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return { data: { rentRecords } };
+  },
+
+  getAllRentRecords: async () => {
+    const snap = await getDocs(collection(db, 'rent'));
+    return { data: { rentRecords: snap.docs.map(snapToObj) } };
+  },
+
+  getById: async (id) => {
+    const snap = await getDoc(doc(db, 'rent', id));
+    if (!snap.exists()) throw new Error('Rent record not found');
+    return { data: { rentRecord: snapToObj(snap) } };
+  },
+
+  getByProperty: async (propertyId) => {
+    const snap = await getDocs(
+      query(collection(db, 'rent'), where('propertyId', '==', propertyId))
+    );
+    return { data: { rentRecords: snap.docs.map(snapToObj) } };
+  },
+
+  create: async (data) => {
+    const user = auth.currentUser;
+    const orgId = await getOrgId();
+    const rentDoc = { ...data, organizationId: orgId, createdBy: user.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    const ref = await addDoc(collection(db, 'rent'), rentDoc);
+    return { data: { success: true, rentRecord: { id: ref.id, ...rentDoc } } };
+  },
+
+  update: async (id, data) => {
+    await updateDoc(doc(db, 'rent', id), { ...data, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  delete: async (id) => {
+    await deleteDoc(doc(db, 'rent', id));
+    return { data: { success: true } };
+  },
 };
+
+// ── PAYMENTS API ──────────────────────────────────────────────────────────────
 
 export const paymentsAPI = {
-  getAll: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/payments${query ? `?${query}` : ''}`);
+  getAll: async (params = {}) => {
+    const orgId = await getOrgId().catch(() => null);
+    const q = orgId
+      ? query(collection(db, 'payments'), where('organizationId', '==', orgId))
+      : query(collection(db, 'payments'));
+    const snap = await getDocs(q);
+    const payments = snap.docs.map(snapToObj);
+    payments.sort((a, b) => new Date(b.paymentDate || 0) - new Date(a.paymentDate || 0));
+    return { data: { payments } };
   },
-  getById: (id) => api.get(`/payments/${id}`),
-  create: (data) => api.post('/payments', data),
-  update: (id, data) => api.put(`/payments/${id}`, data),
-  delete: (id) => api.delete(`/payments/${id}`),
-  getDashboardSummary: () => api.get('/payments/dashboard/summary'),
-  getStats: () => api.get('/payments/stats'),
+
+  getById: async (id) => {
+    const snap = await getDoc(doc(db, 'payments', id));
+    if (!snap.exists()) throw new Error('Payment not found');
+    return { data: { payment: snapToObj(snap) } };
+  },
+
+  create: async (data) => {
+    const user = auth.currentUser;
+    const orgId = await getOrgId();
+    const paymentDoc = { ...data, organizationId: orgId, createdBy: user.uid, createdAt: serverTimestamp() };
+    const ref = await addDoc(collection(db, 'payments'), paymentDoc);
+    return { data: { success: true, payment: { id: ref.id, ...paymentDoc } } };
+  },
+
+  update: async (id, data) => {
+    await updateDoc(doc(db, 'payments', id), { ...data, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  delete: async (id) => {
+    await deleteDoc(doc(db, 'payments', id));
+    return { data: { success: true } };
+  },
+
+  getDashboardSummary: async () => {
+    const orgId = await getOrgId().catch(() => null);
+    const mkQuery = (col, ...extra) =>
+      orgId
+        ? query(collection(db, col), where('organizationId', '==', orgId), ...extra)
+        : query(collection(db, col), ...extra);
+
+    const [pymtSnap, propSnap, rentSnap] = await Promise.all([
+      getDocs(mkQuery('payments')),
+      getDocs(mkQuery('properties')),
+      getDocs(mkQuery('rent'), where('status', '==', 'active')),
+    ]);
+
+    const now = new Date();
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+    let thisCollected = 0, thisCount = 0, lastCollected = 0, lastCount = 0;
+    const allPayments = [];
+
+    pymtSnap.forEach((d) => {
+      const p = d.data();
+      const date = p.paymentDate instanceof Timestamp ? p.paymentDate.toDate() : new Date(p.paymentDate);
+      allPayments.push({ id: d.id, ...convertTimestamps(p), paymentDate: date });
+      if (date >= thisMonthStart) { thisCollected += p.amount || 0; thisCount++; }
+      else if (date >= lastMonthStart && date <= lastMonthEnd) { lastCollected += p.amount || 0; lastCount++; }
+    });
+
+    allPayments.sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
+
+    let expectedRent = 0;
+    rentSnap.forEach((d) => { expectedRent += d.data().monthlyRent || 0; });
+
+    let totalSpaces = 0;
+    propSnap.forEach((d) => {
+      const p = d.data();
+      if (p.type === 'building') {
+        (p.buildingDetails?.floors || []).forEach((f) => { totalSpaces += (f.spaces?.length || 0); });
+      } else if (p.type === 'land') {
+        totalSpaces += (p.landDetails?.squatters?.length || 0);
+      }
+    });
+
+    const rate = (amt) => expectedRent > 0 ? Math.round((amt / expectedRent) * 100) : 0;
+
+    return {
+      data: {
+        totalProperties: propSnap.size,
+        totalSpaces,
+        thisMonth: { collected: thisCollected, expected: expectedRent, payments: thisCount, collectionRate: rate(thisCollected) },
+        lastMonth: { collected: lastCollected, expected: expectedRent, payments: lastCount, collectionRate: rate(lastCollected) },
+        recentPayments: allPayments.slice(0, 5),
+      },
+    };
+  },
+
+  getStats: async () => {
+    const orgId = await getOrgId().catch(() => null);
+    const q = orgId
+      ? query(collection(db, 'payments'), where('organizationId', '==', orgId))
+      : query(collection(db, 'payments'));
+    const snap = await getDocs(q);
+    let total = 0, count = 0;
+    snap.forEach((d) => { total += d.data().amount || 0; count++; });
+    return { data: { stats: { total, count } } };
+  },
 };
+
+// ── INVOICES API ──────────────────────────────────────────────────────────────
+
+/** Generate a sequential invoice number for the given org */
+async function generateInvoiceNumber(orgId) {
+  const snap = await getDocs(
+    query(collection(db, 'invoices'), where('organizationId', '==', orgId))
+  );
+  const seq = String(snap.size + 1).padStart(4, '0');
+  return `INV-${new Date().getFullYear()}-${seq}`;
+}
 
 export const invoicesAPI = {
-  getAll: (params = {}) => {
-    const query = new URLSearchParams(params).toString();
-    return api.get(`/invoices${query ? `?${query}` : ''}`);
+  getAll: async (params = {}) => {
+    const orgId = await getOrgId().catch(() => null);
+    const q = orgId
+      ? query(collection(db, 'invoices'), where('organizationId', '==', orgId))
+      : query(collection(db, 'invoices'));
+    const snap = await getDocs(q);
+    const invoices = snap.docs.map(snapToObj);
+    invoices.sort((a, b) => new Date(b.issueDate || b.createdAt || 0) - new Date(a.issueDate || a.createdAt || 0));
+    return { data: { invoices } };
   },
-  getById: (id) => api.get(`/invoices/${id}`),
-  create: (data) => api.post('/invoices', data),
-  update: (id, data) => api.put(`/invoices/${id}`, data),
-  delete: (id) => api.delete(`/invoices/${id}`),
+
+  getById: async (id) => {
+    const snap = await getDoc(doc(db, 'invoices', id));
+    if (!snap.exists()) throw new Error('Invoice not found');
+    return { data: { invoice: snapToObj(snap) } };
+  },
+
+  create: async (data) => {
+    const user = auth.currentUser;
+    const orgId = await getOrgId();
+
+    // Pull tenant / property names from the rent record if not supplied
+    let tenantName = data.tenantName || '';
+    let propertyName = data.propertyName || '';
+    if (data.rentId && (!tenantName || !propertyName)) {
+      const rentSnap = await getDoc(doc(db, 'rent', data.rentId)).catch(() => null);
+      if (rentSnap?.exists()) {
+        const rd = rentSnap.data();
+        tenantName = tenantName || rd.tenantName || '';
+        propertyName = propertyName || rd.propertyName || '';
+      }
+    }
+
+    const invoiceNumber = await generateInvoiceNumber(orgId);
+    const invoiceDoc = {
+      ...data,
+      invoiceNumber,
+      tenantName,
+      propertyName,
+      organizationId: orgId,
+      issueDate: new Date().toISOString(),
+      status: data.status || 'pending',
+      createdBy: user.uid,
+      createdAt: serverTimestamp(),
+    };
+    const ref = await addDoc(collection(db, 'invoices'), invoiceDoc);
+    return { data: { success: true, invoice: { id: ref.id, ...invoiceDoc } } };
+  },
+
+  update: async (id, data) => {
+    await updateDoc(doc(db, 'invoices', id), { ...data, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  delete: async (id) => {
+    await deleteDoc(doc(db, 'invoices', id));
+    return { data: { success: true } };
+  },
 };
+
+// ── TENANTS API ───────────────────────────────────────────────────────────────
+// In the RBAC version tenant data is embedded inside rent records.
+// These functions delegate to the rent collection so page code doesn't change.
 
 export const tenantsAPI = {
-  getAll: () => api.get('/tenants'),
-  getById: (id) => api.get(`/tenants/${id}`),
-  create: (data) => api.post('/tenants', data),
-  update: (id, data) => api.put(`/tenants/${id}`, data),
-  delete: (id) => api.delete(`/tenants/${id}`),
-  getByProperty: (propertyId) => api.get(`/tenants/property/${propertyId}`),
+  getAll: async () => {
+    const orgId = await getOrgId().catch(() => null);
+    const q = orgId
+      ? query(collection(db, 'rent'), where('organizationId', '==', orgId))
+      : query(collection(db, 'rent'));
+    const snap = await getDocs(q);
+    return { data: { tenants: snap.docs.map(snapToObj) } };
+  },
+
+  getById: async (id) => {
+    const snap = await getDoc(doc(db, 'rent', id));
+    if (!snap.exists()) throw new Error('Tenant record not found');
+    return { data: { tenant: snapToObj(snap) } };
+  },
+
+  create: async (data) => rentAPI.create(data),
+
+  update: async (id, data) => rentAPI.update(id, data),
+
+  delete: async (id) => {
+    await deleteDoc(doc(db, 'rent', id));
+    return { data: { success: true } };
+  },
+
+  getByProperty: async (propertyId) => rentAPI.getByProperty(propertyId),
 };
+
+// ── USERS API ─────────────────────────────────────────────────────────────────
 
 export const usersAPI = {
-  getAll: () => api.get('/users'),
-  getAllUsers: () => api.get('/users/all'), // Super Admin - all users across organizations
-  getById: (id) => api.get(`/users/${id}`),
-  updateProfile: (id, data) => api.put(`/users/${id}/profile`, data),
-  updateRole: (id, data) => api.put(`/users/${id}/role`, data),
-  getAdminDashboardStats: () => api.get('/users/admin/dashboard/stats'),
+  getAll: async () => {
+    const orgId = await getOrgId().catch(() => null);
+    const q = orgId
+      ? query(collection(db, 'users'), where('organizationId', '==', orgId))
+      : query(collection(db, 'users'));
+    const snap = await getDocs(q);
+    return { data: { users: snap.docs.map(snapToObj) } };
+  },
+
+  getAllUsers: async () => {
+    const snap = await getDocs(collection(db, 'users'));
+    return { data: { users: snap.docs.map(snapToObj) } };
+  },
+
+  getById: async (id) => {
+    const snap = await getDoc(doc(db, 'users', id));
+    if (!snap.exists()) throw new Error('User not found');
+    return { data: { user: snapToObj(snap) } };
+  },
+
+  updateProfile: async (id, data) => {
+    await updateDoc(doc(db, 'users', id), { ...data, updatedAt: serverTimestamp() });
+    if (auth.currentUser?.uid === id) clearProfileCache();
+    return { data: { success: true } };
+  },
+
+  updateRole: async (id, data) => {
+    await updateDoc(doc(db, 'users', id), { ...data, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  getAdminDashboardStats: async () => {
+    const [usersSnap, orgsSnap, propsSnap] = await Promise.all([
+      getDocs(collection(db, 'users')),
+      getDocs(collection(db, 'organizations')),
+      getDocs(collection(db, 'properties')),
+    ]);
+    return {
+      data: {
+        stats: {
+          totalUsers: usersSnap.size,
+          totalOrganizations: orgsSnap.size,
+          totalProperties: propsSnap.size,
+        },
+      },
+    };
+  },
 };
+
+// ── ORGANIZATIONS API ─────────────────────────────────────────────────────────
 
 export const organizationsAPI = {
-  getAll: () => api.get('/organizations'),
-  getById: (id) => api.get(`/organizations/${id}`),
-  create: (data) => api.post('/organizations', data),
-  update: (id, data) => api.put(`/organizations/${id}`, data),
-  delete: (id) => api.delete(`/organizations/${id}`),
-  getRoles: (id) => api.get(`/organizations/${id}/roles`),
-  createRole: (orgId, data) => api.post(`/organizations/${orgId}/roles`, data),
-  updateRole: (orgId, roleId, data) => api.put(`/organizations/${orgId}/roles/${roleId}`, data),
-  deleteRole: (orgId, roleId) => api.delete(`/organizations/${orgId}/roles/${roleId}`),
-  getUsers: (id) => api.get(`/organizations/${id}/users`),
-  updateUserRole: (orgId, userId, roleId) => api.put(`/organizations/${orgId}/users/${userId}/role`, { roleId }),
-  updateUserStatus: (orgId, userId, status) => api.put(`/organizations/${orgId}/users/${userId}/status`, { status }),
-  removeUser: (orgId, userId) => api.delete(`/organizations/${orgId}/users/${userId}`),
-  inviteUser: (orgId, data) => api.post(`/organizations/${orgId}/invite`, data),
-  getInvitations: (orgId, status) => {
-    const query = status ? `?status=${status}` : '';
-    return api.get(`/organizations/${orgId}/invitations${query}`);
+  getAll: async () => {
+    const snap = await getDocs(collection(db, 'organizations'));
+    return { data: { organizations: snap.docs.map(snapToObj) } };
   },
-  cancelInvitation: (orgId, invitationId) => api.put(`/organizations/${orgId}/invitations/${invitationId}/cancel`),
+
+  getById: async (id) => {
+    const snap = await getDoc(doc(db, 'organizations', id));
+    if (!snap.exists()) throw new Error('Organization not found');
+    return { data: { organization: snapToObj(snap) } };
+  },
+
+  create: async (data) => {
+    const user = auth.currentUser;
+    const orgDoc = { ...data, status: data.status || 'active', createdBy: user.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    const ref = await addDoc(collection(db, 'organizations'), orgDoc);
+    return { data: { success: true, organization: { id: ref.id, ...orgDoc } } };
+  },
+
+  update: async (id, data) => {
+    await updateDoc(doc(db, 'organizations', id), { ...data, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  delete: async (id) => {
+    await deleteDoc(doc(db, 'organizations', id));
+    return { data: { success: true } };
+  },
+
+  getRoles: async (id) => {
+    const snap = await getDocs(query(collection(db, 'roles'), where('organizationId', '==', id)));
+    return { data: { roles: snap.docs.map(snapToObj) } };
+  },
+
+  createRole: async (orgId, data) => {
+    const ref = await addDoc(collection(db, 'roles'), { ...data, organizationId: orgId, createdAt: serverTimestamp() });
+    return { data: { success: true, role: { id: ref.id, ...data, organizationId: orgId } } };
+  },
+
+  updateRole: async (orgId, roleId, data) => {
+    await updateDoc(doc(db, 'roles', roleId), { ...data, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  deleteRole: async (orgId, roleId) => {
+    await deleteDoc(doc(db, 'roles', roleId));
+    return { data: { success: true } };
+  },
+
+  getUsers: async (id) => {
+    const snap = await getDocs(query(collection(db, 'users'), where('organizationId', '==', id)));
+    return { data: { users: snap.docs.map(snapToObj) } };
+  },
+
+  updateUserRole: async (orgId, userId, roleId) => {
+    await updateDoc(doc(db, 'users', userId), { roleId, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  updateUserStatus: async (orgId, userId, status) => {
+    await updateDoc(doc(db, 'users', userId), { status, updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
+
+  removeUser: async (orgId, userId) => {
+    await updateDoc(doc(db, 'users', userId), {
+      organizationId: null, roleId: null, status: 'pending', updatedAt: serverTimestamp(),
+    });
+    return { data: { success: true } };
+  },
+
+  inviteUser: async (orgId, data) => {
+    const ref = await addDoc(collection(db, 'invitations'), {
+      ...data, organizationId: orgId, status: 'pending', createdAt: serverTimestamp(),
+    });
+    return { data: { success: true, invitation: { id: ref.id } } };
+  },
+
+  getInvitations: async (orgId, status) => {
+    let q = query(collection(db, 'invitations'), where('organizationId', '==', orgId));
+    if (status) q = query(collection(db, 'invitations'), where('organizationId', '==', orgId), where('status', '==', status));
+    const snap = await getDocs(q);
+    return { data: { invitations: snap.docs.map(snapToObj) } };
+  },
+
+  cancelInvitation: async (orgId, invitationId) => {
+    await updateDoc(doc(db, 'invitations', invitationId), { status: 'cancelled', updatedAt: serverTimestamp() });
+    return { data: { success: true } };
+  },
 };
+
+// ── SYSTEM API ────────────────────────────────────────────────────────────────
 
 export const systemAPI = {
-  getSettings: () => api.get('/system/settings'),
-  updateSettings: (data) => api.put('/system/settings', data),
-  getHealth: () => api.get('/system/health'),
-  toggleMaintenance: (enabled, message) => api.post('/system/maintenance', { enabled, message }),
-  getStatistics: (startDate, endDate) => {
-    const params = new URLSearchParams();
-    if (startDate) params.append('startDate', startDate);
-    if (endDate) params.append('endDate', endDate);
-    return api.get(`/system/statistics${params.toString() ? `?${params.toString()}` : ''}`);
+  getSettings: async () => {
+    const snap = await getDoc(doc(db, 'system', 'settings'));
+    return { data: { settings: snap.exists() ? convertTimestamps(snap.data()) : {} } };
+  },
+
+  updateSettings: async (data) => {
+    await setDoc(doc(db, 'system', 'settings'), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+    return { data: { success: true } };
+  },
+
+  getHealth: async () => ({ data: { status: 'OK', timestamp: new Date().toISOString() } }),
+
+  toggleMaintenance: async (enabled, message) => {
+    await setDoc(doc(db, 'system', 'settings'), {
+      maintenanceMode: enabled, maintenanceMessage: message, updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return { data: { success: true } };
+  },
+
+  getStatistics: async () => {
+    const [propsSnap, usersSnap, pymtSnap] = await Promise.all([
+      getDocs(collection(db, 'properties')),
+      getDocs(collection(db, 'users')),
+      getDocs(collection(db, 'payments')),
+    ]);
+    let totalRevenue = 0;
+    pymtSnap.forEach((d) => { totalRevenue += d.data().amount || 0; });
+    return {
+      data: {
+        statistics: {
+          totalProperties: propsSnap.size,
+          totalUsers: usersSnap.size,
+          totalPayments: pymtSnap.size,
+          totalRevenue,
+        },
+      },
+    };
   },
 };
 
-export default api;
+export default {
+  authAPI, propertiesAPI, rentAPI, paymentsAPI, invoicesAPI,
+  tenantsAPI, usersAPI, organizationsAPI, systemAPI,
+};
