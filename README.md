@@ -224,7 +224,7 @@ yarn build
 ### Firebase Hosting
 
 ```bash
-npm install -g firebase-tools
+yarn global add firebase-tools
 firebase login
 firebase init hosting
 # Set public directory to: frontend/dist
