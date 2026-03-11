@@ -51,6 +51,7 @@ import {
   Phone,
   CalendarToday,
   AttachMoney,
+  Delete,
 } from '@mui/icons-material';
 import { format, differenceInDays, isValid, parseISO } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -100,6 +101,8 @@ const InvoicesPage = () => {
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
   const [lastCreatedPayment, setLastCreatedPayment] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [invoiceToDelete, setInvoiceToDelete] = useState(null);
   
   const [newPayment, setNewPayment] = useState({
     invoiceId: '',
@@ -154,6 +157,30 @@ const InvoicesPage = () => {
       toast.error(error.response?.data?.error || 'Failed to record payment');
     },
   });
+
+  // Delete invoice mutation
+  const deleteInvoiceMutation = useMutation((id) => invoicesAPI.delete(id), {
+    onSuccess: () => {
+      queryClient.invalidateQueries('invoices');
+      toast.success('Invoice deleted successfully');
+      setDeleteDialogOpen(false);
+      setInvoiceToDelete(null);
+    },
+    onError: () => {
+      toast.error('Failed to delete invoice');
+    },
+  });
+
+  const handleDeleteClick = (invoice) => {
+    setInvoiceToDelete(invoice);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (invoiceToDelete) {
+      deleteInvoiceMutation.mutate(invoiceToDelete.id);
+    }
+  };
 
   // Get invoices data (always call hooks before early return)
   const invoices = invoicesData?.data?.invoices || [];
@@ -557,6 +584,15 @@ const InvoicesPage = () => {
                             </IconButton>
                           </Tooltip>
                         )}
+                        <Tooltip title="Delete Invoice">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteClick(invoice)}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Tooltip>
                       </Box>
                     </TableCell>
                   </TableRow>
@@ -682,6 +718,56 @@ const InvoicesPage = () => {
         open={receiptDialogOpen}
         onClose={() => setReceiptDialogOpen(false)}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Delete fontSize="small" />
+          Delete Invoice
+        </DialogTitle>
+        <DialogContent>
+          {invoiceToDelete && (
+            <Box>
+              <Typography variant="body1" gutterBottom>
+                Are you sure you want to delete this invoice? This action cannot be undone.
+              </Typography>
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                <Typography variant="body2" fontWeight="bold" fontFamily="monospace">
+                  {invoiceToDelete.invoiceNumber}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {invoiceToDelete.tenantName} — {invoiceToDelete.propertyName}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Amount: {formatCurrency(invoiceToDelete.amount)}
+                </Typography>
+                <Chip
+                  label={invoiceToDelete.status?.replace('_', ' ').toUpperCase()}
+                  color={getInvoiceStatusColor(invoiceToDelete.status)}
+                  size="small"
+                  sx={{ mt: 1 }}
+                />
+              </Box>
+              {invoiceToDelete.paidAmount > 0 && (
+                <Typography variant="body2" color="warning.main" sx={{ mt: 1.5 }}>
+                  Warning: This invoice has recorded payments of {formatCurrency(invoiceToDelete.paidAmount)}. Deleting it will not remove the associated payment records.
+                </Typography>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleConfirmDelete}
+            variant="contained"
+            color="error"
+            disabled={deleteInvoiceMutation.isLoading}
+          >
+            {deleteInvoiceMutation.isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

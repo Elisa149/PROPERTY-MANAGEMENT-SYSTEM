@@ -434,6 +434,32 @@ export const paymentsAPI = {
     const orgId = await getOrgId();
     const paymentDoc = { ...data, organizationId: orgId, createdBy: user.uid, createdAt: serverTimestamp() };
     const ref = await addDoc(collection(db, 'payments'), paymentDoc);
+
+    // Update the linked invoice's paid amount, remaining amount, and status
+    if (data.invoiceId) {
+      const invoiceRef = doc(db, 'invoices', data.invoiceId);
+      const invoiceSnap = await getDoc(invoiceRef).catch(() => null);
+      if (invoiceSnap?.exists()) {
+        const inv = invoiceSnap.data();
+        const newPaidAmount = (inv.paidAmount || 0) + (data.amount || 0);
+        const newRemainingAmount = (inv.amount || 0) - newPaidAmount;
+        let newStatus;
+        if (newRemainingAmount <= 0) {
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partially_paid';
+        } else {
+          newStatus = inv.status || 'pending';
+        }
+        await updateDoc(invoiceRef, {
+          paidAmount: newPaidAmount,
+          remainingAmount: Math.max(0, newRemainingAmount),
+          status: newStatus,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+
     return { data: { success: true, payment: { id: ref.id, ...paymentDoc } } };
   },
 

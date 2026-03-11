@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Property management web app — React frontend with Firebase backend",
   "scripts": {
-    "dev": "yarn dev",
-    "build": "yarn build",
-    "preview": "yarn preview"
+    "dev": "yarn --cwd frontend dev",
+    "build": "yarn --cwd frontend build",
+    "preview": "yarn --cwd frontend preview"
   },
   "keywords": [
     "property-management",
